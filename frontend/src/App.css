@@ -1,0 +1,7 @@
+/* Basic styles for App.jsx */
+.App {
+  font-family: sans-serif;
+  /* You can add more global styles here if needed,
+     but most styles are handled by the component itself
+     or a UI framework like Tailwind CSS if it were fully configured. */
+}

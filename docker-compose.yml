@@ -1,0 +1,22 @@
+# Basic placeholder for docker-compose.yml
+# Services (frontend, backend, postgres, redis) will be defined here later.
+version: '3.8'
+services:
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "3000:3000"
+  # backend:
+  #   build: ./backend
+  #   ports:
+  #     - "5000:5000"
+  #   env_file: .env
+  # postgres:
+  #   image: postgres:latest
+  #   ports:
+  #     - "5432:5432"
+  #   env_file: .env
+  # redis:
+  #   image: redis:latest
+  #   ports:
+  #     - "6379:6379"

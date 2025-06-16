@@ -1,0 +1,7 @@
+-- Basic placeholder for database/init.sql
+-- This file can be used to initialize the database schema or seed initial data.
+-- Example:
+-- CREATE TABLE IF NOT EXISTS departments (
+--     id SERIAL PRIMARY KEY,
+--     name VARCHAR(255) NOT NULL
+-- );
