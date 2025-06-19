@@ -1,0 +1,63 @@
+# Environment variables
+.env
+*.env
+.env.*
+!.env.example
+
+# Node modules
+node_modules/
+**/node_modules/
+
+# Frontend build artifacts
+frontend/build/
+frontend/.eslintcache
+frontend/coverage/ # If tests generate coverage
+
+# Backend artifacts
+backend/coverage/ # If tests generate coverage
+# Add any other backend build artifacts or logs if necessary
+
+# IDE specific
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# OS specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*~
+# Fuse file system caches
+.fuse_hidden*
+# KDE directory preferences
+.directory
+# Windows thumbnail cache files
+._*
+
+# Docker (if local data is ever mapped directly instead of named volumes)
+# postgres_data/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Other
+*.swp
+dist/
+tmp/
+temp/

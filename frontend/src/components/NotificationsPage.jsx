@@ -1,0 +1,12 @@
+import React from 'react';
+
+function NotificationsPage() {
+  return (
+    <div>
+      <h1>Notifications Page</h1>
+      {/* Placeholder for notifications content */}
+    </div>
+  );
+}
+
+export default NotificationsPage;
