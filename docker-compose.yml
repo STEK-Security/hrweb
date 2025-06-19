@@ -1,22 +1,47 @@
-# Basic placeholder for docker-compose.yml
-# Services (frontend, backend, postgres, redis) will be defined here later.
 version: '3.8'
+
 services:
-  # frontend:
-  #   build: ./frontend
-  #   ports:
-  #     - "3000:3000"
-  # backend:
-  #   build: ./backend
-  #   ports:
-  #     - "5000:5000"
-  #   env_file: .env
-  # postgres:
-  #   image: postgres:latest
-  #   ports:
-  #     - "5432:5432"
-  #   env_file: .env
-  # redis:
-  #   image: redis:latest
-  #   ports:
-  #     - "6379:6379"
+  postgres:
+    image: postgres:15-alpine
+    container_name: performancereview_postgres
+    env_file:
+      - .env # Make sure .env file exists with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    ports:
+      - "${DB_PORT:-5432}:5432" # Use DB_PORT from .env or default to 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: performancereview_backend
+    env_file:
+      - .env # For DB connection, EMAIL settings, BACKEND_PORT etc.
+    ports:
+      - "${BACKEND_PORT:-5000}:${BACKEND_PORT:-5000}"
+    volumes:
+      # For development, mount code but not node_modules to use modules from the image:
+      - ./backend:/usr/src/app/backend
+      - /usr/src/app/backend/node_modules
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    # Adding a healthcheck for the backend (optional but good practice)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-5000}/"] # Basic check to see if server responds
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+
+  frontend:
+    build: ./frontend
+    container_name: performancereview_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80" # Nginx in container runs on 80
+    # depends_on:
+    #   - backend # Usually not needed for static files, unless it proxies or needs backend at build time
+    restart: unless-stopped
+
+volumes:
+  postgres_data: # Defines a named volume for persistent PostgreSQL data
