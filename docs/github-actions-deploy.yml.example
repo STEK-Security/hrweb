@@ -1,0 +1,52 @@
+name: Deploy to Dokploy (hr.stek.kr)
+
+# main push 시 자동 배포.
+# 주의: Dokploy 서버(172.30.60.21)는 사내망 전용이라 GitHub 클라우드 러너에서 도달 불가.
+#       사내망에 등록된 self-hosted 러너에서만 이 잡이 성공한다.
+#       (Settings → Actions → Runners 에서 self-hosted 러너 등록 필요)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted]     # 사내망 러너 (클라우드 러너는 Dokploy 미도달)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install & build (single HTML)
+        run: |
+          bun install --frozen-lockfile || bun install
+          bun run build:single
+      - name: Update Dokploy mount & redeploy
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APP_ID: ${{ secrets.DOKPLOY_APP_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          U, K, AID = os.environ['DOKPLOY_URL'], os.environ['DOKPLOY_API_KEY'], os.environ['DOKPLOY_APP_ID']
+          def api(path, body=None):
+              cmd = ['curl','-sS','-H',f'x-api-key:{K}','-H','content-type:application/json', f'{U}/api/{path}']
+              if body is not None: cmd[1:1] = ['-X','POST','--data-binary','@-']
+              r = subprocess.run(cmd, input=(json.dumps(body) if body is not None else None),
+                                 capture_output=True, text=True, timeout=60)
+              try: return json.loads(r.stdout)
+              except: return r.stdout
+          app = api(f'application.one?applicationId={AID}'); app = app.get('result') or app
+          mount = next((m for m in (app.get('mounts') or []) if m.get('mountPath','').endswith('index.html')), None)
+          html = open('hr-app.html').read()
+          if mount:
+              api('mounts.update', {"mountId": mount['mountId'], "type":"file",
+                  "mountPath": mount['mountPath'], "content": html, "filePath": mount.get('filePath') or 'index.html'})
+          else:
+              api('mounts.create', {"type":"file","serviceId":AID,"serviceType":"application",
+                  "mountPath":"/usr/share/nginx/html/index.html","content":html,"filePath":"index.html"})
+          api('application.deploy', {"applicationId": AID})
+          print("deployed", len(html), "bytes")
+          PY
