@@ -38,6 +38,7 @@ import { SampleDataNotice } from './components/SampleDataNotice';
 import { ParsedWorkbook, RawRow } from './excel/parse';
 import { deriveAll, countExcluded } from './excel/derive';
 import { buildDataset } from './excel/adapt';
+import { checkSupabase, supabaseConfigured } from './lib/supabase';
 
 /* ============================================================
    적재된 엑셀 정보
@@ -70,6 +71,17 @@ export default function App() {
   const [showDataSource, setShowDataSource] = useState(false);
   const [version, setVersion] = useState(0);
   const [booted, setBooted] = useState(false);
+  const [sbStatus, setSbStatus] = useState<'checking' | 'ok' | 'down' | 'off'>(
+    supabaseConfigured ? 'checking' : 'off'
+  );
+
+  // supabase 연결 확인 (브라우저 → api.hr.stek.kr)
+  useEffect(() => {
+    if (!supabaseConfigured) { setSbStatus('off'); return; }
+    let alive = true;
+    checkSupabase().then((ok) => { if (alive) setSbStatus(ok ? 'ok' : 'down'); });
+    return () => { alive = false; };
+  }, []);
 
   /* 세션·데이터 복원 */
   useEffect(() => {
@@ -136,6 +148,7 @@ export default function App() {
           user={user}
           dataInfo={dataInfo}
           corps={corps}
+          sbStatus={sbStatus}
           onLogout={handleLogout}
           onOpenDataSource={() => setShowDataSource(true)}
         />
@@ -156,6 +169,7 @@ export default function App() {
       user={user}
       dataInfo={dataInfo}
       corps={corps}
+      sbStatus={sbStatus}
       onLogout={handleLogout}
       onOpenDataSource={() => setShowDataSource(true)}
     />
@@ -169,11 +183,12 @@ interface AppShellProps {
   user: DemoAccount;
   dataInfo: DataInfo;
   corps: string[];
+  sbStatus: 'checking' | 'ok' | 'down' | 'off';
   onLogout: () => void;
   onOpenDataSource: () => void;
 }
 
-const AppShell: React.FC<AppShellProps> = ({ user, dataInfo, corps, onLogout, onOpenDataSource }) => {
+const AppShell: React.FC<AppShellProps> = ({ user, dataInfo, corps, sbStatus, onLogout, onOpenDataSource }) => {
   const [activeMenu, setActiveMenu] = useState<ActiveMenu>('대시보드');
   const [selectedCorp, setSelectedCorp] = useState<string>('전체 법인');
 
@@ -279,6 +294,7 @@ const AppShell: React.FC<AppShellProps> = ({ user, dataInfo, corps, onLogout, on
         user={user}
         dataInfo={dataInfo}
         corps={corps}
+        sbStatus={sbStatus}
         onLogout={onLogout}
         onOpenDataSource={onOpenDataSource}
       />

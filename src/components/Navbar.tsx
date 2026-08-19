@@ -25,6 +25,8 @@ interface NavbarProps {
   corps?: string[];
   onLogout?: () => void;
   onOpenDataSource?: () => void;
+  /** supabase 연결 상태 */
+  sbStatus?: 'checking' | 'ok' | 'down' | 'off';
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   corps,
   onLogout,
   onOpenDataSource,
+  sbStatus,
 }) => {
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
@@ -96,6 +99,26 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* supabase 연결 상태 */}
+            {sbStatus && sbStatus !== 'off' && (
+              <span
+                title={
+                  sbStatus === 'ok' ? 'Supabase 연결됨 (api.hr.stek.kr)'
+                  : sbStatus === 'checking' ? 'Supabase 연결 확인 중'
+                  : 'Supabase 미연결 — 네트워크/도메인 확인 필요'
+                }
+                className={`hidden md:inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-semibold ${
+                  sbStatus === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : sbStatus === 'checking' ? 'bg-slate-50 border-slate-200 text-slate-500'
+                  : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  sbStatus === 'ok' ? 'bg-emerald-500' : sbStatus === 'checking' ? 'bg-slate-400' : 'bg-rose-500'
+                }`}></span>
+                Supabase
+              </span>
+            )}
             {/* 데이터 원본 (업로드된 엑셀) */}
             {dataInfo && onOpenDataSource && (
               <button
