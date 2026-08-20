@@ -1,6 +1,7 @@
 import { useAuth, signOut } from './lib/auth';
 import { LoginPage } from './features/auth/LoginPage';
 import { Navbar } from './components/Navbar';
+import { DashboardPage } from './features/dashboard/DashboardPage';
 import type { ActiveMenu } from './types';
 
 export default function App() {
@@ -31,13 +32,8 @@ export default function App() {
         user={{ name: displayName, dept: '', role: role ?? '일반' }}
         onLogout={signOut}
       />
-      <main className="max-w-3xl mx-auto px-4 py-16 text-center">
-        <h1 className="text-lg font-bold">
-          환영합니다, {displayName}({role ?? '일반'})
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          직원 명부/휴직/관리자 화면은 다음 단계에서 연결됩니다.
-        </p>
+      <main className="w-full px-4 sm:px-6 lg:px-8 2xl:px-10 py-6">
+        <DashboardPage />
       </main>
     </div>
   );
