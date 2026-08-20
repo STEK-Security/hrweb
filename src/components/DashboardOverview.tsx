@@ -6,15 +6,6 @@ import {
   CalendarEventItem,
   RatioData,
 } from '../types';
-// TODO(redesign): DB 데이터로 교체 예정
-const genderRatioData: RatioData[] = [];
-const nationalityRatioData: RatioData[] = [];
-const jobTypeRatioData: RatioData[] = [];
-const ageRatioData: RatioData[] = [];
-const positionDistributionData: { name: string; count: number; percentage: number; color: string }[] = [];
-const departmentDistributionData: { name: string; count: number; percentage: number; fillRate: number }[] = [];
-const tenureByDepartment: { department: string; avgYears: number; earlyTurnoverRate: number }[] = [];
-const employeeRecords: { hireDate: string | null; quitDate: string | null }[] = [];
 import {
   ResponsiveContainer,
   PieChart,
@@ -56,6 +47,14 @@ interface DashboardOverviewProps {
   onSelectMonthModal: (data: MonthlyHireLeaverData) => void;
   onOpenAddSchedule: () => void;
   selectedCorp: string;
+  genderRatioData?: RatioData[];
+  nationalityRatioData?: RatioData[];
+  jobTypeRatioData?: RatioData[];
+  ageRatioData?: RatioData[];
+  positionDistributionData?: { name: string; count: number; percentage: number; color: string }[];
+  departmentDistributionData?: { name: string; count: number; percentage: number; fillRate: number }[];
+  tenureByDepartment?: { department: string; avgYears: number; earlyTurnoverRate: number }[];
+  employeeRecords?: { hireDate: string | null; quitDate: string | null }[];
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -66,6 +65,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onSelectMonthModal,
   onOpenAddSchedule,
   selectedCorp,
+  genderRatioData = [],
+  nationalityRatioData = [],
+  jobTypeRatioData = [],
+  ageRatioData = [],
+  positionDistributionData = [],
+  departmentDistributionData = [],
+  tenureByDepartment = [],
+  employeeRecords = [],
 }) => {
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
