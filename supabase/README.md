@@ -16,21 +16,36 @@
 ## 2. 암호화 키 주입 방법
 
 `employee_sensitive` 의 값은 pgcrypto(`pgp_sym_encrypt`/`pgp_sym_decrypt`) 로 암호화되어 있고,
-키는 **DB 스키마 어디에도 저장하지 않는다**. `get_sensitive_masked` / `set_sensitive` /
-`get_ssn_full` 을 호출하는 세션에서 매번 아래를 먼저 실행해야 한다.
+키는 **DB 스키마 어디에도 저장하지 않는다**.
+
+**클라이언트(브라우저)는 이 키를 절대 주입하지 않는다.** Approach A 는 브라우저가 anon/authenticated
+key 로 PostgREST 에 직결하므로, 클라이언트가 호출 가능한 `set_config`/GUC 세팅 RPC 를 만드는
+순간 아무 로그인 사용자나 임의 키를 넣어 복호화를 시도할 수 있다 — 그래서 그런 RPC 는 존재하지
+않는다. 대신 키는 **서버측 로그인 롤(`authenticator`)에 세션 기본값으로 1회 고정**한다. Studio
+SQL 편집기에서 관리자가 딱 한 번 실행:
 
 ```sql
-select set_config('app.enc_key', '<실제 키값>', true);  -- true = 트랜잭션 로컬
-select public.get_sensitive_masked('<employee uuid>');
+alter role authenticator set app.enc_key = '<실제 키값>';
 ```
 
-- `true`(트랜잭션 로컬)로 주입하면 커밋/롤백과 함께 사라진다. 커넥션 풀러(PgBouncer 등)를
-  쓰는 백엔드/Edge Function 에서는 **요청마다** 주입해야 세션 재사용으로 키가 새는 걸 막는다.
-- 키 자체는 별도 secret store(예: Dokploy 환경변수, Vault)에 보관하고 이 레포·커밋 이력에는
-  절대 남기지 않는다.
-- Studio SQL 편집기에서 수동 조회할 때도 `set_config` 를 먼저 실행해야 `pgp_sym_decrypt` 가
-  성공한다. 키를 안 주면 `current_setting('app.enc_key', true)` 가 NULL 이 되어 RPC 가
-  `raise exception 'encryption key not set for this session'` 로 즉시 실패한다(안전한 기본값).
+이후 `get_sensitive_masked` / `set_sensitive` / `get_ssn_full` 은 그냥 호출하면 된다 — PostgREST
+가 `authenticator` 로 접속한 세션 안에서 `set role authenticated`(또는 `n8n_ingest` 등)로 전환해도,
+세션 시작 시 적용된 `app.enc_key` GUC 값은 그대로 유지된다.
+
+- 키가 설정 안 됐거나 틀리면 `current_setting('app.enc_key', true)` 가 NULL 이 되어 RPC 가
+  `raise exception 'encryption key not set for this session'` 로 즉시 실패한다(fail-closed, 안전한 기본값).
+- **더 안전한 대안(권장): Supabase Vault.** GUC 는 `authenticator` 로 접속 가능한 어떤 SQL 세션에서든
+  `current_setting('app.enc_key')` 로 평문 그대로 보인다. Vault 를 쓰면 평문이 GUC/설정 테이블
+  어디에도 노출되지 않는다:
+  ```sql
+  select vault.create_secret('<실제 키값>', 'hr_enc_key');
+  ```
+  적용하려면 `0005_sensitive_rpc.sql` 의 세 함수에서 `current_setting('app.enc_key', true)` 를
+  `(select decrypted_secret from vault.decrypted_secrets where name = 'hr_enc_key')` 로 바꾼다.
+- **전제:** `ALTER ROLE ... SET` 방식이든 Vault 든, 이 키를 볼 수 있는 경로(Studio SQL 편집기,
+  Postgres 5432 포트 직결)가 인터넷/사내망에 그대로 열려 있으면 키 유출 = 전 직원 민감정보 유출과
+  같다. 스펙 8절 P0-5(Studio·5432·관리경로 외부차단)가 반드시 함께 적용되어 있어야 한다.
+- 키 값 자체(실제 값)는 이 레포·커밋 이력·Dokploy 로그 어디에도 남기지 않는다.
 
 ## 3. 최초 관리자 계정
 
@@ -56,12 +71,23 @@ select public.get_sensitive_masked('<employee uuid>');
 | (b) anon 에게 SELECT 허용된 테이블 | 0 rows |
 | (c) 헬퍼함수/RPC 존재 | 7 rows |
 | (d) employee_sensitive 직접 권한/정책 | 둘 다 0 rows |
-| (e) n8n_ingest 권한 | employees/leave_records 만 INSERT,UPDATE, employee_sensitive 0 rows |
+| (e) n8n_ingest 테이블단위 권한 | 0 rows(전부 컬럼단위라 정상) |
+| (e-2) n8n_ingest 컬럼단위 권한 | employees(id/user_id 제외)·leave_records(id/employee_id 제외)만 INSERT,UPDATE, SELECT 없음 |
+| (e-3) employee_sensitive × n8n_ingest | 0 rows |
+| (g-2) 마스킹 RPC 3개 소유자 BYPASSRLS | 3 rows 전부 true |
 | (f) audit_log append-only | update/delete 정책 qual = false |
 | (g) user_roles 정책 | admin all + self read 2개만 |
 
 (h) 는 SQL 로 자동화할 수 없는 항목(다른 역할 계정으로 실제 로그인해 확인)이라 수동 체크리스트로
 남겨뒀다.
+
+**CI/배포 게이트로 사용할 것:** (a)(전 테이블 RLS enable+force)와 (b)(anon SELECT 허용 테이블)는
+결과가 0 rows 가 아니면 **배포를 실패시켜야 하는** 검사다(스펙 8절 P0-1, Task 1.9 CI RLS 가드).
+`scripts/check-rls.mjs`(아직 미구현, Task 1.9)가 이 두 쿼리를 실행해 1 row 이상 나오면 `exit 1`
+하도록 만들고, `deploy.sh`/CI 파이프라인의 배포 전 단계에 넣는다. `0001_roles.sql` 의
+`alter default privileges ... revoke all on tables from anon, authenticated;` 는 앞으로 추가될
+신규 테이블에 대한 백스톱이지, 이 CI 게이트를 대체하지 않는다(백스톱은 "기본값"만 막고, 개별
+마이그레이션이 실수로 `grant ... to anon` 을 명시적으로 써버리는 것까지는 못 막는다).
 
 ## 5. n8n 연동 시 주의
 

@@ -2,6 +2,11 @@
 -- 역할 소스: user_roles (사용자 self-write 금지). 헬퍼 함수는 SECURITY DEFINER + search_path 고정.
 -- 이 파일은 supabase Studio SQL 편집기에서 그대로 실행 가능하다.
 
+-- [보안 리뷰 반영] 앞으로 이 롤(통상 postgres)이 public 스키마에 만드는 모든 신규 테이블은,
+-- 개별 마이그레이션에서 명시적으로 grant 하기 전까지 anon/authenticated 에게 기본 권한이
+-- 전혀 생기지 않는다. "깜빡하고 GRANT 를 안 좁힌 새 테이블이 그대로 노출"되는 사고를 원천 차단.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+
 -- 역할은 user_roles 로만 관리한다. profiles/JWT 어디에도 role 을 이중으로 두지 않는다.
 create table if not exists public.user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,

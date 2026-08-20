@@ -65,13 +65,27 @@ select schemaname, tablename, policyname
 from pg_policies
 where schemaname = 'public' and tablename = 'employee_sensitive';
 
--- (e) n8n_ingest 롤이 employees/leave_records 에 insert/update 만 갖고 select·
---     employee_sensitive 권한이 전혀 없는지 확인.
---     기대: employees/leave_records 는 INSERT,UPDATE 만 나오고, employee_sensitive 는 0 rows
+-- (e) n8n_ingest 롤에 테이블단위 권한이 하나도 없는지 확인(전부 컬럼단위 grant 라 여기는 0이 정상).
+--     기대: 0 rows
 select table_name, grantee, privilege_type
 from information_schema.role_table_grants
 where grantee = 'n8n_ingest'
 order by table_name, privilege_type;
+
+-- (e-2) n8n_ingest 의 실제 컬럼단위 권한 확인. employees/leave_records 만, select 없이 insert/update
+--     만, id·user_id·employee_id 는 빠져있는지 확인.
+--     기대: employees 는 id/user_id 없이 나머지 컬럼만 INSERT,UPDATE / leave_records 는
+--          id/employee_id 없이 나머지 컬럼만 INSERT,UPDATE. SELECT 는 어떤 컬럼도 없어야 함.
+select table_name, privilege_type, column_name
+from information_schema.column_privileges
+where grantee = 'n8n_ingest'
+order by table_name, privilege_type, column_name;
+
+-- (e-3) employee_sensitive 에 n8n_ingest 대상 권한이 전혀 없는지 확인.
+--     기대: 0 rows
+select table_name, grantee, privilege_type
+from information_schema.role_table_grants
+where table_name = 'employee_sensitive' and grantee = 'n8n_ingest';
 
 -- (f) audit_log 가 append-only 인지(update/delete 정책이 false 로 막혀있는지) 확인.
 --     기대: audit no update / audit no delete 2 rows, qual = 'false'
@@ -85,8 +99,21 @@ select policyname, cmd
 from pg_policies
 where schemaname = 'public' and tablename = 'user_roles';
 
+-- (g-2) 마스킹 RPC 3개의 소유자가 RLS 를 우회하는(BYPASSRLS 또는 슈퍼유저) 롤인지 확인.
+--     employee_sensitive 는 FORCE RLS 라 소유자가 이 조건을 못 만족하면 RPC 가 항상 빈 결과/에러를 낸다.
+--     기대: 3 rows 전부 bypasses_rls = true
+select p.proname, r.rolname as owner, (r.rolsuper or r.rolbypassrls) as bypasses_rls
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+join pg_roles r on r.oid = p.proowner
+where n.nspname = 'public'
+  and p.proname in ('get_sensitive_masked','set_sensitive','get_ssn_full');
+
 -- (h) 실사용 전 수동 확인(SQL 로 자동화 불가): 아래는 Studio 에서 다른 계정으로 로그인해 직접 확인.
 --   - 일반 계정으로 employee_sensitive select 시도 → 42501 permission denied
 --   - 일반 계정으로 get_sensitive_masked(다른 emp) 호출 → 'forbidden' 예외
---   - hr 계정으로 get_sensitive_masked(emp) 호출(app.enc_key 주입 후) → 마스킹된 jsonb 반환
+--   - hr 계정으로 get_sensitive_masked(emp) 호출 → 마스킹된 jsonb 반환(app.enc_key 는 이제
+--     클라이언트가 주입하지 않는다 — authenticator 세션 기본값으로 이미 고정되어 있어야 하며,
+--     `alter role authenticator set app.enc_key=...` 를 아직 안 했다면 이 호출은
+--     "encryption key not set for this session" 로 실패하는 게 정상이다)
 --   - 팀장 계정으로 타 팀 employees select → 0 rows

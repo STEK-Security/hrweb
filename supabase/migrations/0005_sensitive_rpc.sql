@@ -1,9 +1,28 @@
 -- 0005_sensitive_rpc.sql
 -- employee_sensitive 접근은 이 3개 SECURITY DEFINER RPC 로만 이뤄진다.
--- 암호화 키는 DB 밖에서 세션 변수로 주입한다: RPC 호출 세션에서
---   select set_config('app.enc_key', '<키>', true);
--- 를 먼저 실행해야 한다(같은 커넥션/트랜잭션 내에서만 유효, true = 트랜잭션 로컬).
--- Studio SQL 편집기에서 RPC 를 테스트할 때도 동일하게 먼저 주입해야 한다.
+--
+-- [보안 리뷰 반영] 클라이언트가 호출 가능한 set_config/GUC 세팅 RPC 는 절대 만들지 않는다.
+-- Approach A(브라우저가 anon/authenticated key 로 PostgREST 에 직결)에서는 클라이언트가
+-- 임의로 app.enc_key 를 주입할 방법이 없어야 하므로, 키는 서버측 로그인 롤(authenticator)에
+-- 세션 기본값(ALTER ROLE ... SET)으로 1회 고정한다. 아래 함수들은 여전히
+-- `current_setting('app.enc_key', true)` 로만 읽고, 값이 없거나 틀리면 예외로 fail-closed 한다
+-- (클라이언트가 이 값을 바꾸거나 우회할 수 있는 경로 자체가 없다).
+--
+-- ============================================================
+-- [수동 실행 필요 — 배포 시 관리자 1회] 실제 키로 바꿔 실행한다. 이 파일에는 플레이스홀더만 남긴다.
+--
+--   alter role authenticator set app.enc_key = '<REPLACE_WITH_ACTUAL_KEY>';
+--
+-- 대안(더 안전, 권장): Supabase Vault 사용 — 평문을 GUC/설정 테이블 어디에도 남기지 않는다.
+--   select vault.create_secret('<REPLACE_WITH_ACTUAL_KEY>', 'hr_enc_key');
+--   그리고 아래 각 함수의 `current_setting('app.enc_key', true)` 를
+--   `(select decrypted_secret from vault.decrypted_secrets where name = 'hr_enc_key')` 로 교체.
+--
+-- 주의: ALTER ROLE 방식은 authenticator 로 접속 가능한 어떤 SQL 세션이든
+-- `current_setting('app.enc_key')` 로 평문 키를 그대로 볼 수 있다는 뜻이다. 그래서
+-- Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시 전제되어야 한다 — 이게 깨지면
+-- 키 노출 = 전 직원 민감정보 노출이다.
+-- ============================================================
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
@@ -43,8 +62,11 @@ begin
     else pgp_sym_decrypt(r.reg_addr_enc, k)::jsonb end;
 
   return jsonb_build_object(
+    -- [보안 리뷰 반영] 뒤7자리(고유식별 번호)가 아니라 앞8자리(생년월일6+하이픈+성별코드1,
+    -- 예: "900101-1")만 남기고 나머지 6자리를 마스킹한다("900101-1******").
+    -- 뒤7자리를 노출하면 생년월일 평문 컬럼과 결합해 주민번호 전체가 역산 가능했다.
     'ssn', case when r.ssn_enc is null then null
-      else '******-' || right(pgp_sym_decrypt(r.ssn_enc, k), 7) end,
+      else left(pgp_sym_decrypt(r.ssn_enc, k), 8) || '******' end,
 
     'salary_acct', case when salary is null then null
       else jsonb_build_object(
@@ -178,3 +200,10 @@ $$;
 
 revoke execute on function public.get_ssn_full(uuid) from public;
 grant execute on function public.get_ssn_full(uuid) to authenticated; -- 함수 내부에서 is_hr() 재확인
+
+-- [보안 리뷰 반영] employee_sensitive 는 FORCE ROW LEVEL SECURITY 라서, 이 SECURITY DEFINER
+-- 함수들이 실제로 값을 읽으려면 함수 소유자가 RLS 를 우회하는(BYPASSRLS, 통상 postgres 슈퍼유저)
+-- 롤이어야 한다. 마이그레이션을 다른 롤로 실행했을 경우를 대비해 명시적으로 고정한다.
+alter function public.get_sensitive_masked(uuid) owner to postgres;
+alter function public.set_sensitive(uuid, jsonb) owner to postgres;
+alter function public.get_ssn_full(uuid) owner to postgres;

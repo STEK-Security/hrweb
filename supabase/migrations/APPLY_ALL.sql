@@ -6,10 +6,9 @@
 -- 실행 전 주의사항
 -- ============================================================
 -- 1) 이 파일은 스키마/RLS/함수/롤 생성만 한다. 데모 데이터는 넣지 않는다(별도 Phase 7 seed).
--- 2) 암호화 키(app.enc_key) 는 이 파일 어디에도 없다. get_sensitive_masked / set_sensitive /
---    get_ssn_full 을 호출하는 세션에서 그때그때 아래처럼 주입해야 한다(DB 밖에서 주입, 영구 저장 금지):
---      select set_config('app.enc_key', '<키값>', true);  -- true = 트랜잭션 로컬(커밋/롤백 시 사라짐)
---    커넥션 풀러(PgBouncer 등) 를 쓰는 환경에서는 세션이 재사용될 수 있으니 매 트랜잭션마다 주입한다.
+-- 2) 암호화 키(app.enc_key)는 클라이언트가 주입하지 않는다. 0005_sensitive_rpc.sql 상단의
+--    [수동 실행 필요] 블록을 참고해 `alter role authenticator set app.enc_key = '<실제 키>';`
+--    를 관리자가 1회 실행한다(더 안전한 대안: Supabase Vault — 같은 블록에 기록됨).
 -- 3) 최초 시스템관리자 계정은 이 SQL 로 만들지 않는다. supabase Auth 로 계정 생성 후
 --    `update public.user_roles set role='시스템관리자' where user_id='<uuid>';` 를 admin 세션에서 직접 실행한다
 --    (self-write 금지 정책 때문에 본인 계정으로는 자신을 admin 으로 못 올린다 — 이건 의도된 동작).
@@ -22,6 +21,11 @@
 -- 0001_roles.sql
 -- 역할 소스: user_roles (사용자 self-write 금지). 헬퍼 함수는 SECURITY DEFINER + search_path 고정.
 -- 이 파일은 supabase Studio SQL 편집기에서 그대로 실행 가능하다.
+
+-- [보안 리뷰 반영] 앞으로 이 롤(통상 postgres)이 public 스키마에 만드는 모든 신규 테이블은,
+-- 개별 마이그레이션에서 명시적으로 grant 하기 전까지 anon/authenticated 에게 기본 권한이
+-- 전혀 생기지 않는다. "깜빡하고 GRANT 를 안 좁힌 새 테이블이 그대로 노출"되는 사고를 원천 차단.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
 
 -- 역할은 user_roles 로만 관리한다. profiles/JWT 어디에도 role 을 이중으로 두지 않는다.
 create table if not exists public.user_roles (
@@ -303,10 +307,29 @@ revoke all on public.employee_sensitive from public;
 -- ============================================================
 -- 0005_sensitive_rpc.sql
 -- employee_sensitive 접근은 이 3개 SECURITY DEFINER RPC 로만 이뤄진다.
--- 암호화 키는 DB 밖에서 세션 변수로 주입한다: RPC 호출 세션에서
---   select set_config('app.enc_key', '<키>', true);
--- 를 먼저 실행해야 한다(같은 커넥션/트랜잭션 내에서만 유효, true = 트랜잭션 로컬).
--- Studio SQL 편집기에서 RPC 를 테스트할 때도 동일하게 먼저 주입해야 한다.
+--
+-- [보안 리뷰 반영] 클라이언트가 호출 가능한 set_config/GUC 세팅 RPC 는 절대 만들지 않는다.
+-- Approach A(브라우저가 anon/authenticated key 로 PostgREST 에 직결)에서는 클라이언트가
+-- 임의로 app.enc_key 를 주입할 방법이 없어야 하므로, 키는 서버측 로그인 롤(authenticator)에
+-- 세션 기본값(ALTER ROLE ... SET)으로 1회 고정한다. 아래 함수들은 여전히
+-- `current_setting('app.enc_key', true)` 로만 읽고, 값이 없거나 틀리면 예외로 fail-closed 한다
+-- (클라이언트가 이 값을 바꾸거나 우회할 수 있는 경로 자체가 없다).
+--
+-- ============================================================
+-- [수동 실행 필요 — 배포 시 관리자 1회] 실제 키로 바꿔 실행한다. 이 파일에는 플레이스홀더만 남긴다.
+--
+--   alter role authenticator set app.enc_key = '<REPLACE_WITH_ACTUAL_KEY>';
+--
+-- 대안(더 안전, 권장): Supabase Vault 사용 — 평문을 GUC/설정 테이블 어디에도 남기지 않는다.
+--   select vault.create_secret('<REPLACE_WITH_ACTUAL_KEY>', 'hr_enc_key');
+--   그리고 아래 각 함수의 `current_setting('app.enc_key', true)` 를
+--   `(select decrypted_secret from vault.decrypted_secrets where name = 'hr_enc_key')` 로 교체.
+--
+-- 주의: ALTER ROLE 방식은 authenticator 로 접속 가능한 어떤 SQL 세션이든
+-- `current_setting('app.enc_key')` 로 평문 키를 그대로 볼 수 있다는 뜻이다. 그래서
+-- Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시 전제되어야 한다 — 이게 깨지면
+-- 키 노출 = 전 직원 민감정보 노출이다.
+-- ============================================================
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
@@ -346,8 +369,11 @@ begin
     else pgp_sym_decrypt(r.reg_addr_enc, k)::jsonb end;
 
   return jsonb_build_object(
+    -- [보안 리뷰 반영] 뒤7자리(고유식별 번호)가 아니라 앞8자리(생년월일6+하이픈+성별코드1,
+    -- 예: "900101-1")만 남기고 나머지 6자리를 마스킹한다("900101-1******").
+    -- 뒤7자리를 노출하면 생년월일 평문 컬럼과 결합해 주민번호 전체가 역산 가능했다.
     'ssn', case when r.ssn_enc is null then null
-      else '******-' || right(pgp_sym_decrypt(r.ssn_enc, k), 7) end,
+      else left(pgp_sym_decrypt(r.ssn_enc, k), 8) || '******' end,
 
     'salary_acct', case when salary is null then null
       else jsonb_build_object(
@@ -481,6 +507,13 @@ $$;
 
 revoke execute on function public.get_ssn_full(uuid) from public;
 grant execute on function public.get_ssn_full(uuid) to authenticated; -- 함수 내부에서 is_hr() 재확인
+
+-- [보안 리뷰 반영] employee_sensitive 는 FORCE ROW LEVEL SECURITY 라서, 이 SECURITY DEFINER
+-- 함수들이 실제로 값을 읽으려면 함수 소유자가 RLS 를 우회하는(BYPASSRLS, 통상 postgres 슈퍼유저)
+-- 롤이어야 한다. 마이그레이션을 다른 롤로 실행했을 경우를 대비해 명시적으로 고정한다.
+alter function public.get_sensitive_masked(uuid) owner to postgres;
+alter function public.set_sensitive(uuid, jsonb) owner to postgres;
+alter function public.get_ssn_full(uuid) owner to postgres;
 
 
 -- ============================================================
@@ -648,7 +681,9 @@ create policy "audit no delete" on public.audit_log
 -- 0010_n8n_role.sql
 -- n8n 전용 최소권한 롤. service_role 은 절대 사용하지 않는다.
 -- employees/leave_records 의 insert/update 만 가능하고, SELECT 와 employee_sensitive 는
--- 아무 권한도 없다(민감값은 n8n 경로로 절대 못 읽는다).
+-- 아무 권한도 없다(민감값은 n8n 경로로 절대 못 읽는다). insert/update 도 테이블 단위가 아니라
+-- 컬럼단위 GRANT 다 — id/user_id(employees), id/employee_id(leave_records) 같은 PK·FK·링킹
+-- 컬럼은 제외해, 침해 시 n8n_ingest 로 임의 auth 계정에 직원행을 연결하는 걸 막는다.
 --
 -- 연결 방식: n8n 이 이 DB 자격증명을 직접 들지 않는 것이 이상적이나(별도 인제스트
 -- Edge Function + HMAC 토큰 권장, 스펙 8절 P0-4), 이 마이그레이션은 최소한의 DB 롤
@@ -675,9 +710,50 @@ begin
 end
 $$;
 
--- employees: insert/update 만. select 없음. employee_sensitive 권한 없음(기본 REVOKE 유지).
-grant insert, update on public.employees to n8n_ingest;
-grant insert, update on public.leave_records to n8n_ingest;
+-- [보안 리뷰 반영] employees.id/user_id, leave_records.id/employee_id 는 컬럼단위 GRANT 에서
+-- 제외한다. user_id 를 n8n 이 임의로 쓸 수 있으면(테이블단위 grant 였을 때) 침해 시 남의
+-- auth 계정과 직원행을 연결해 "emp self read" RLS 를 우회당할 수 있었다. id/employee_id 는
+-- FK·PK 라 n8n 인제스트가 건드릴 이유가 없는 링킹 컬럼이라 함께 제외한다.
+revoke insert, update on public.employees from n8n_ingest;
+revoke insert, update on public.leave_records from n8n_ingest;
+
+grant insert (
+  "성명", "영문성명", "닉네임", "사번", "그룹사원번호",
+  "법인", "소속", "전체소속명", "직책", "직급", "고용구분", "근무지",
+  "입사일", "그룹입사일", "퇴직일", "퇴직사유",
+  "근속연수(그룹입사일)", "근속연수(입사일)",
+  "발령명", "입사경로", "추천인", "인정경력(년)", "인정경력(월)",
+  "성별", "생년월일", "나이(만)", "결혼여부", "음양구분", "생일",
+  "학력", "학교", "학위", "전공",
+  "역종", "군별", "계급", "병역특례여부", "장애여부", "보훈대상자",
+  "국적", "내/외국인", "거주지국", "체류자격", "체류시작일", "체류종료일",
+  "근태기준일", "퇴직기준일", "최종이동일", "최종보임일", "직무변경일", "직종전환일",
+  "계약시작일", "계약종료일", "수습종료일"
+) on public.employees to n8n_ingest;
+
+grant update (
+  "성명", "영문성명", "닉네임", "사번", "그룹사원번호",
+  "법인", "소속", "전체소속명", "직책", "직급", "고용구분", "근무지",
+  "입사일", "그룹입사일", "퇴직일", "퇴직사유",
+  "근속연수(그룹입사일)", "근속연수(입사일)",
+  "발령명", "입사경로", "추천인", "인정경력(년)", "인정경력(월)",
+  "성별", "생년월일", "나이(만)", "결혼여부", "음양구분", "생일",
+  "학력", "학교", "학위", "전공",
+  "역종", "군별", "계급", "병역특례여부", "장애여부", "보훈대상자",
+  "국적", "내/외국인", "거주지국", "체류자격", "체류시작일", "체류종료일",
+  "근태기준일", "퇴직기준일", "최종이동일", "최종보임일", "직무변경일", "직종전환일",
+  "계약시작일", "계약종료일", "수습종료일"
+) on public.employees to n8n_ingest;
+
+grant insert (
+  name, dept, position, reason, start_date, expected_return_date,
+  substitute_assigned, substitute_name, contact, status, created_at, updated_at
+) on public.leave_records to n8n_ingest;
+
+grant update (
+  name, dept, position, reason, start_date, expected_return_date,
+  substitute_assigned, substitute_name, contact, status, created_at, updated_at
+) on public.leave_records to n8n_ingest;
 
 -- RLS: n8n_ingest 롤 전용 insert/update 정책 (해당 롤은 is_hr()/user_roles 매칭 대상이 아니므로 별도 정책 필요)
 create policy "n8n insert employees" on public.employees
