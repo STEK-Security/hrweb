@@ -45,8 +45,8 @@ export interface MonthlyHireLeaverData {
 
 export interface DetailedMatrixRow {
   id: string;
-  corporation: 'STEK' | 'TBS';
-  location: '서울 본사' | '천안 사업장';
+  corporation: string;
+  location: string;
   maleCount: number;
   femaleCount: number;
   domesticCount: number;
