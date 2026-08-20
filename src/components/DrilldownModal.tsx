@@ -1,6 +1,16 @@
 import React from 'react';
 import { X, Users, Factory, Truck, CheckCircle2, ChevronRight } from 'lucide-react';
-import { fieldWorkDrilldown } from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const fieldWorkDrilldown: {
+  total: number;
+  categories: {
+    id: string;
+    name: string;
+    totalCount: number;
+    teams: { teamName: string; count: number; leader: string; shift: string }[];
+    recentTrend: string;
+  }[];
+} = { total: 0, categories: [] };
 
 interface DrilldownModalProps {
   isOpen: boolean;

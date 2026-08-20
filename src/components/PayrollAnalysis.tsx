@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { PayrollMonthlyData, DepartmentProductivityData } from '../types';
-import {
-  initialPayrollData,
-  departmentProductivityData,
-  payrollCostBreakdown,
-} from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const initialPayrollData: PayrollMonthlyData[] = [];
+const departmentProductivityData: DepartmentProductivityData[] = [];
+const payrollCostBreakdown: { name: string; value: number; color: string }[] = [];
 import {
   ResponsiveContainer,
   BarChart,

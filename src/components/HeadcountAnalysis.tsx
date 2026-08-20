@@ -3,17 +3,26 @@ import {
   HeadcountSubTab,
   MonthlyHireLeaverData,
   LeavePersonItem,
+  RatioData,
 } from '../types';
-import {
-  tenureByDepartment,
-  salesCohortTurnoverData,
-  jobTypeRatioData,
-  genderRatioData,
-  nationalityRatioData,
-  ageRatioData,
-  fieldWorkDrilldown,
-  employmentBreakdown,
-} from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const tenureByDepartment: { department: string; avgYears: number; earlyTurnoverRate: number }[] = [];
+const salesCohortTurnoverData: { period: string; turnoverRate: number; mainReason: string }[] = [];
+const jobTypeRatioData: RatioData[] = [];
+const genderRatioData: RatioData[] = [];
+const nationalityRatioData: RatioData[] = [];
+const ageRatioData: RatioData[] = [];
+const fieldWorkDrilldown: {
+  total: number;
+  categories: {
+    id: string;
+    name: string;
+    totalCount: number;
+    teams: { teamName: string; count: number; leader: string; shift: string }[];
+    recentTrend: string;
+  }[];
+} = { total: 0, categories: [] };
+const employmentBreakdown = { regular: 0, contract: 0, leave: 0 };
 import {
   ResponsiveContainer,
   BarChart,

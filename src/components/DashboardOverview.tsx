@@ -4,17 +4,17 @@ import {
   MonthlyHireLeaverData,
   DetailedMatrixRow,
   CalendarEventItem,
+  RatioData,
 } from '../types';
-import {
-  genderRatioData,
-  nationalityRatioData,
-  jobTypeRatioData,
-  ageRatioData,
-  positionDistributionData,
-  departmentDistributionData,
-  tenureByDepartment,
-  employeeRecords,
-} from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const genderRatioData: RatioData[] = [];
+const nationalityRatioData: RatioData[] = [];
+const jobTypeRatioData: RatioData[] = [];
+const ageRatioData: RatioData[] = [];
+const positionDistributionData: { name: string; count: number; percentage: number; color: string }[] = [];
+const departmentDistributionData: { name: string; count: number; percentage: number; fillRate: number }[] = [];
+const tenureByDepartment: { department: string; avgYears: number; earlyTurnoverRate: number }[] = [];
+const employeeRecords: { hireDate: string | null; quitDate: string | null }[] = [];
 import {
   ResponsiveContainer,
   PieChart,

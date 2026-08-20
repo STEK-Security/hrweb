@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { TrainingCourseItem, TrainingParticipant } from '../types';
-import { initialTrainingCourses, initialTrainingParticipants } from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const initialTrainingCourses: TrainingCourseItem[] = [];
+const initialTrainingParticipants: TrainingParticipant[] = [];
 import {
   ResponsiveContainer,
   PieChart,
