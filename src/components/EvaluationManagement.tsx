@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { EvaluationSubTab, EvaluationItem } from '../types';
-import { initialEvaluations } from '../mockData';
+// TODO(redesign): DB 데이터로 교체 예정
+const initialEvaluations: EvaluationItem[] = [];
 import {
   Award,
   CheckCircle2,
