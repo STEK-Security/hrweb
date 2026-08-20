@@ -6,9 +6,14 @@
 -- 실행 전 주의사항
 -- ============================================================
 -- 1) 이 파일은 스키마/RLS/함수/롤 생성만 한다. 데모 데이터는 넣지 않는다(별도 Phase 7 seed).
--- 2) 암호화 키(app.enc_key)는 클라이언트가 주입하지 않는다. 0005_sensitive_rpc.sql 상단의
---    [수동 실행 필요] 블록을 참고해 `alter role authenticator set app.enc_key = '<실제 키>';`
---    를 관리자가 1회 실행한다(더 안전한 대안: Supabase Vault — 같은 블록에 기록됨).
+-- 2) 암호화 키는 Supabase Vault 로 관리한다(클라이언트는 절대 주입하지 않는다). 이 SQL 을
+--    실행한 뒤 Studio SQL 편집기에서 관리자가 1회:
+--      -- 암호화 키 등록 (Studio SQL editor 에서 1회). '<강한 키>' 를 실제 값으로.
+--      select vault.create_secret('<강한 키>', 'app_enc_key');
+--      -- 키 회전: select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');
+--    (v1 은 `alter role authenticator set app.enc_key=...` 를 시도했으나 Supabase 의 postgres 롤이
+--    슈퍼유저가 아니라서 42501 permission denied 로 실패함 — Vault 가 없는 self-host 대비 대체안은
+--    0005_sensitive_rpc.sql 상단 주석과 supabase/README.md 2절 참고.)
 -- 3) 최초 시스템관리자 계정은 이 SQL 로 만들지 않는다. supabase Auth 로 계정 생성 후
 --    `update public.user_roles set role='시스템관리자' where user_id='<uuid>';` 를 admin 세션에서 직접 실행한다
 --    (self-write 금지 정책 때문에 본인 계정으로는 자신을 admin 으로 못 올린다 — 이건 의도된 동작).
@@ -308,27 +313,33 @@ revoke all on public.employee_sensitive from public;
 -- 0005_sensitive_rpc.sql
 -- employee_sensitive 접근은 이 3개 SECURITY DEFINER RPC 로만 이뤄진다.
 --
--- [보안 리뷰 반영] 클라이언트가 호출 가능한 set_config/GUC 세팅 RPC 는 절대 만들지 않는다.
+-- [보안 리뷰 반영 — v2] 클라이언트가 호출 가능한 set_config/GUC 세팅 RPC 는 절대 만들지 않는다.
 -- Approach A(브라우저가 anon/authenticated key 로 PostgREST 에 직결)에서는 클라이언트가
--- 임의로 app.enc_key 를 주입할 방법이 없어야 하므로, 키는 서버측 로그인 롤(authenticator)에
--- 세션 기본값(ALTER ROLE ... SET)으로 1회 고정한다. 아래 함수들은 여전히
--- `current_setting('app.enc_key', true)` 로만 읽고, 값이 없거나 틀리면 예외로 fail-closed 한다
--- (클라이언트가 이 값을 바꾸거나 우회할 수 있는 경로 자체가 없다).
+-- 임의로 키를 주입할 방법이 없어야 한다.
+--
+-- (v1 은 `alter role authenticator set app.enc_key=...` 로 GUC 고정을 시도했으나, 실사용
+-- Supabase 인스턴스에서 `42501 permission denied to set parameter` 로 실패함 — Supabase 의
+-- `postgres` 롤은 슈퍼유저가 아니라 커스텀 GUC 를 ALTER ROLE 로 설정할 권한이 없다.)
+--
+-- → **Supabase Vault** 로 전환한다. 아래 3개 함수는 키를
+-- `(select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key')` 로 읽고,
+-- 결과가 없으면(NULL) 기존과 동일하게 예외로 fail-closed 한다.
 --
 -- ============================================================
--- [수동 실행 필요 — 배포 시 관리자 1회] 실제 키로 바꿔 실행한다. 이 파일에는 플레이스홀더만 남긴다.
+-- [수동 실행 필요 — 배포 시 관리자 1회, Studio SQL 편집기]
 --
---   alter role authenticator set app.enc_key = '<REPLACE_WITH_ACTUAL_KEY>';
+--   -- 암호화 키 등록. '<강한 키>' 를 실제 값으로 바꿔 실행.
+--   select vault.create_secret('<강한 키>', 'app_enc_key');
+--   -- 키 회전:
+--   select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');
 --
--- 대안(더 안전, 권장): Supabase Vault 사용 — 평문을 GUC/설정 테이블 어디에도 남기지 않는다.
---   select vault.create_secret('<REPLACE_WITH_ACTUAL_KEY>', 'hr_enc_key');
---   그리고 아래 각 함수의 `current_setting('app.enc_key', true)` 를
---   `(select decrypted_secret from vault.decrypted_secrets where name = 'hr_enc_key')` 로 교체.
+-- Vault 가 없는 self-host 환경 대비 대체안(둘 중 하나만 고른다): 비공개 스키마 + RLS 정책 0개
+-- 테이블에 평문을 두고 SECURITY DEFINER(postgres 소유) 함수로만 읽는다 — 자세한 DDL 은
+-- supabase/README.md "2. 암호화 키 주입 방법"에 있다. 이 경우 아래 함수의 키 조회식을
+-- `(select value from private.app_secrets where name = 'enc_key')` 로 바꾼다.
 --
--- 주의: ALTER ROLE 방식은 authenticator 로 접속 가능한 어떤 SQL 세션이든
--- `current_setting('app.enc_key')` 로 평문 키를 그대로 볼 수 있다는 뜻이다. 그래서
--- Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시 전제되어야 한다 — 이게 깨지면
--- 키 노출 = 전 직원 민감정보 노출이다.
+-- 주의: Vault 든 대체안이든, Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시
+-- 전제되어야 한다 — 이게 깨지면 키 노출 = 전 직원 민감정보 노출이다.
 -- ============================================================
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
@@ -340,7 +351,7 @@ set search_path = public
 stable
 as $$
 declare
-  k text := current_setting('app.enc_key', true);
+  k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
   r record;
   salary jsonb;
   expense jsonb;
@@ -433,7 +444,7 @@ security definer
 set search_path = public
 as $$
 declare
-  k text := current_setting('app.enc_key', true);
+  k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
 begin
   if not public.is_hr() then
     raise exception 'forbidden';
@@ -485,7 +496,7 @@ security definer
 set search_path = public
 as $$
 declare
-  k text := current_setting('app.enc_key', true);
+  k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
   v text;
 begin
   if not public.is_hr() then

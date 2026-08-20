@@ -16,36 +16,67 @@
 ## 2. 암호화 키 주입 방법
 
 `employee_sensitive` 의 값은 pgcrypto(`pgp_sym_encrypt`/`pgp_sym_decrypt`) 로 암호화되어 있고,
-키는 **DB 스키마 어디에도 저장하지 않는다**.
+키는 **DB 스키마 어디에도 평문으로 저장하지 않는다**.
 
 **클라이언트(브라우저)는 이 키를 절대 주입하지 않는다.** Approach A 는 브라우저가 anon/authenticated
 key 로 PostgREST 에 직결하므로, 클라이언트가 호출 가능한 `set_config`/GUC 세팅 RPC 를 만드는
-순간 아무 로그인 사용자나 임의 키를 넣어 복호화를 시도할 수 있다 — 그래서 그런 RPC 는 존재하지
-않는다. 대신 키는 **서버측 로그인 롤(`authenticator`)에 세션 기본값으로 1회 고정**한다. Studio
-SQL 편집기에서 관리자가 딱 한 번 실행:
+순간 아무 로그인 사용자나 임의 키를 넣어 복호화를 시도할 수 있다 — 그래서 그런 RPC 는 존재하지 않는다.
+
+> **주의(겪은 실패):** 처음엔 키를 서버측 로그인 롤(`authenticator`)에
+> `alter role authenticator set app.enc_key='...'` 로 세션 기본값 고정하려 했으나, 실사용
+> Supabase 인스턴스에서 `42501 permission denied to set parameter` 로 실패했다. Supabase 의
+> `postgres` 롤은 슈퍼유저가 아니라 커스텀 GUC 를 `ALTER ROLE`로 설정할 권한이 없다. →
+> **Supabase Vault** 로 전환한다(아래).
+
+### Vault 방식(채택)
+
+Studio SQL 편집기에서 관리자가 **딱 한 번** 실행:
 
 ```sql
-alter role authenticator set app.enc_key = '<실제 키값>';
+-- 암호화 키 등록. '<강한 키>' 를 실제 값으로 바꿔 실행.
+select vault.create_secret('<강한 키>', 'app_enc_key');
 ```
 
-이후 `get_sensitive_masked` / `set_sensitive` / `get_ssn_full` 은 그냥 호출하면 된다 — PostgREST
-가 `authenticator` 로 접속한 세션 안에서 `set role authenticated`(또는 `n8n_ingest` 등)로 전환해도,
-세션 시작 시 적용된 `app.enc_key` GUC 값은 그대로 유지된다.
+키 회전이 필요하면:
 
-- 키가 설정 안 됐거나 틀리면 `current_setting('app.enc_key', true)` 가 NULL 이 되어 RPC 가
+```sql
+select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');
+```
+
+이후 `get_sensitive_masked` / `set_sensitive` / `get_ssn_full` 은 그냥 호출하면 된다 — 세 함수
+모두 내부에서
+`(select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key')` 로 키를
+읽는다. 클라이언트는 어떤 키도 넘기지 않는다.
+
+- 키가 등록 안 됐으면 위 서브쿼리 결과가 NULL 이 되어 RPC 가
   `raise exception 'encryption key not set for this session'` 로 즉시 실패한다(fail-closed, 안전한 기본값).
-- **더 안전한 대안(권장): Supabase Vault.** GUC 는 `authenticator` 로 접속 가능한 어떤 SQL 세션에서든
-  `current_setting('app.enc_key')` 로 평문 그대로 보인다. Vault 를 쓰면 평문이 GUC/설정 테이블
-  어디에도 노출되지 않는다:
-  ```sql
-  select vault.create_secret('<실제 키값>', 'hr_enc_key');
-  ```
-  적용하려면 `0005_sensitive_rpc.sql` 의 세 함수에서 `current_setting('app.enc_key', true)` 를
-  `(select decrypted_secret from vault.decrypted_secrets where name = 'hr_enc_key')` 로 바꾼다.
-- **전제:** `ALTER ROLE ... SET` 방식이든 Vault 든, 이 키를 볼 수 있는 경로(Studio SQL 편집기,
+- `vault.decrypted_secrets` 는 Vault 확장이 설치된 Supabase 프로젝트에서만 존재한다(이 프로젝트는
+  `VAULT_ENC_KEY` 가 있어 Vault 사용 가능 확인됨).
+- 키 값 자체(실제 값)는 이 레포·커밋 이력·Dokploy 로그 어디에도 남기지 않는다.
+
+### Vault 가 없는 self-host 대비 대체안
+
+Vault 확장이 없는 순수 self-host Postgres 라면, 비공개 스키마 + RLS 정책 0개 테이블로 대체한다:
+
+```sql
+create schema if not exists private;
+revoke all on schema private from anon, authenticated;
+create table if not exists private.app_secrets(name text primary key, value text not null);
+alter table private.app_secrets enable row level security;  -- 정책 0개 = 아무도 직접 못 읽음
+revoke all on private.app_secrets from anon, authenticated;
+insert into private.app_secrets(name,value) values('enc_key','<강한 키>')
+  on conflict(name) do update set value=excluded.value;
+```
+
+이 경우 `0005_sensitive_rpc.sql` 세 함수의 키 조회식을
+`(select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key')` 에서
+`(select value from private.app_secrets where name = 'enc_key')` 로 바꾼다(함수 소유자가
+postgres 라 RLS 정책이 없어도 SECURITY DEFINER 로 읽을 수 있다 — 0004/0005 의 employee_sensitive
+와 같은 원리).
+
+- **전제:** Vault 방식이든 self-host 대체안이든, 이 키를 볼 수 있는 경로(Studio SQL 편집기,
   Postgres 5432 포트 직결)가 인터넷/사내망에 그대로 열려 있으면 키 유출 = 전 직원 민감정보 유출과
   같다. 스펙 8절 P0-5(Studio·5432·관리경로 외부차단)가 반드시 함께 적용되어 있어야 한다.
-- 키 값 자체(실제 값)는 이 레포·커밋 이력·Dokploy 로그 어디에도 남기지 않는다.
 
 ## 3. 최초 관리자 계정
 

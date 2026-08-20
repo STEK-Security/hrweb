@@ -1,34 +1,16 @@
--- 0005_sensitive_rpc.sql
--- employee_sensitive 접근은 이 3개 SECURITY DEFINER RPC 로만 이뤄진다.
+-- hotfix_0011_enckey_vault.sql
+-- 이미 APPLY_ALL.sql(구버전, GUC 방식)을 실행해서 get_sensitive_masked/set_sensitive/
+-- get_ssn_full 이 `current_setting('app.enc_key', true)` 버전으로 만들어져 있는 경우를 위한
+-- 단독 hotfix. 이 파일만 Studio SQL 편집기에 붙여 실행하면 3개 함수가 Vault 버전으로 교체된다.
 --
--- [보안 리뷰 반영 — v2] 클라이언트가 호출 가능한 set_config/GUC 세팅 RPC 는 절대 만들지 않는다.
--- Approach A(브라우저가 anon/authenticated key 로 PostgREST 에 직결)에서는 클라이언트가
--- 임의로 키를 주입할 방법이 없어야 한다.
---
--- (v1 은 `alter role authenticator set app.enc_key=...` 로 GUC 고정을 시도했으나, 실사용
--- Supabase 인스턴스에서 `42501 permission denied to set parameter` 로 실패함 — Supabase 의
--- `postgres` 롤은 슈퍼유저가 아니라 커스텀 GUC 를 ALTER ROLE 로 설정할 권한이 없다.)
---
--- → **Supabase Vault** 로 전환한다. 아래 3개 함수는 키를
--- `(select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key')` 로 읽고,
--- 결과가 없으면(NULL) 기존과 동일하게 예외로 fail-closed 한다.
---
--- ============================================================
--- [수동 실행 필요 — 배포 시 관리자 1회, Studio SQL 편집기]
---
---   -- 암호화 키 등록. '<강한 키>' 를 실제 값으로 바꿔 실행.
+-- 실행 전, 아직 키를 Vault 에 등록하지 않았다면 먼저 1회:
 --   select vault.create_secret('<강한 키>', 'app_enc_key');
---   -- 키 회전:
---   select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');
+-- (키 회전: select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');)
 --
--- Vault 가 없는 self-host 환경 대비 대체안(둘 중 하나만 고른다): 비공개 스키마 + RLS 정책 0개
--- 테이블에 평문을 두고 SECURITY DEFINER(postgres 소유) 함수로만 읽는다 — 자세한 DDL 은
--- supabase/README.md "2. 암호화 키 주입 방법"에 있다. 이 경우 아래 함수의 키 조회식을
--- `(select value from private.app_secrets where name = 'enc_key')` 로 바꾼다.
---
--- 주의: Vault 든 대체안이든, Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시
--- 전제되어야 한다 — 이게 깨지면 키 노출 = 전 직원 민감정보 노출이다.
--- ============================================================
+-- 배경: `alter role authenticator set app.enc_key=...` 방식은 Supabase 의 postgres 롤이
+-- 슈퍼유저가 아니라서 `42501 permission denied to set parameter` 로 실패한다. 이 hotfix 는
+-- 0005_sensitive_rpc.sql 의 최신 버전(Vault 사용)과 동일한 내용이다 — 신규로 처음부터
+-- 적용하는 경우라면 이 파일 대신 최신 APPLY_ALL.sql/0005_sensitive_rpc.sql 을 쓰면 된다.
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
