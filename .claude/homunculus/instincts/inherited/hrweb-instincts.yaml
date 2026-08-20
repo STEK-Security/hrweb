@@ -1,0 +1,127 @@
+# Instincts generated from https://github.com/STEK-Security/hrweb
+# Generated: 2026-08-20T03:26:04.995Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: hrweb-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: docs, refactor, feat, fix
+
+## Evidence
+
+- 5 commits analyzed
+- Detected conventional commit pattern
+- Examples: docs: HR 웹앱 재설계 설계 스펙 (supabase DB + 보안 위협모델 반영), refactor: 엑셀 업로드·목데이터 제거 (Task 0.1)
+
+---
+id: hrweb-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Commit Length
+
+## Action
+
+Keep commit messages concise (~46 characters)
+
+## Evidence
+
+- Average commit message length: 46 chars
+- Based on 5 commits
+
+---
+id: hrweb-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: hrweb-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: hrweb-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: hrweb-arch-type-based
+trigger: "when adding new code"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/STEK-Security/hrweb
+---
+
+# Hrweb Arch Type Based
+
+## Action
+
+Place code in the appropriate type folder (components/, services/, utils/, etc.)
+
+## Evidence
+
+- Type-based module organization detected
+- Folders: components, excel
+
