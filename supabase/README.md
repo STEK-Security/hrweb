@@ -43,8 +43,8 @@ select vault.create_secret('<강한 키>', 'app_enc_key');
 select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');
 ```
 
-이후 `get_sensitive_masked` / `set_sensitive` / `get_ssn_full` 은 그냥 호출하면 된다 — 세 함수
-모두 내부에서
+이후 `get_sensitive_masked` / `set_sensitive` / `get_ssn_full` / `reveal_sensitive_field` 는
+그냥 호출하면 된다 — 네 함수 모두 내부에서
 `(select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key')` 로 키를
 읽는다. 클라이언트는 어떤 키도 넘기지 않는다.
 
@@ -77,6 +77,24 @@ postgres 라 RLS 정책이 없어도 SECURITY DEFINER 로 읽을 수 있다 — 
 - **전제:** Vault 방식이든 self-host 대체안이든, 이 키를 볼 수 있는 경로(Studio SQL 편집기,
   Postgres 5432 포트 직결)가 인터넷/사내망에 그대로 열려 있으면 키 유출 = 전 직원 민감정보 유출과
   같다. 스펙 8절 P0-5(Studio·5432·관리경로 외부차단)가 반드시 함께 적용되어 있어야 한다.
+
+### 민감정보 표시정책(사용자 지시로 변경됨)
+
+`get_sensitive_masked(emp)` 가 반환하는 8개 항목의 기본 표시 방식:
+
+| 항목 | 기본 표시 | 원본 조회 |
+|---|---|---|
+| 개인메일(email) | **전체 값 그대로** (마스킹 없음) | 해당 없음(이미 원본) |
+| 휴대폰(phone) | 마스킹(`***-****-`+뒤4) | hr 가 "보이기" 버튼 → `reveal_sensitive_field(emp,'phone')` |
+| 급여계좌(salary_acct) | 마스킹(계좌번호만 `***`+뒤4, 은행/예금주는 평문) | `reveal_sensitive_field(emp,'salary_acct')`(jsonb 텍스트 그대로 반환, UI 가 파싱) |
+| 경비계좌(expense_acct) | 마스킹(위와 동일) | `reveal_sensitive_field(emp,'expense_acct')` |
+| 주민번호(ssn) | 마스킹(`900101-1******`) | `get_ssn_full(emp)`(하위호환) 또는 `reveal_sensitive_field(emp,'ssn')` — 신규 개발은 후자로 통일 권장 |
+| 현주소(addr) / 등본주소(reg_addr) | 마스킹(앞2토큰+`***`) | `reveal_sensitive_field(emp,'addr')` / `reveal_sensitive_field(emp,'reg_addr')` |
+| 비상연락망(emergency) | 마스킹 | `reveal_sensitive_field(emp,'emergency')` |
+
+`reveal_sensitive_field(emp uuid, field text)` 는 hr 전용(내부에서 `is_hr()` 재확인), 필드명은
+CASE 화이트리스트로만 매칭(동적 SQL 없음), 호출마다 `audit_log` 에 `action='reveal'`,
+`column_name=field` 로 기록된다. 목록에 없는 `field` 값은 `invalid field` 예외로 거부된다.
 
 ## 3. 최초 관리자 계정
 

@@ -1,16 +1,24 @@
 -- hotfix_0011_enckey_vault.sql
--- 이미 APPLY_ALL.sql(구버전, GUC 방식)을 실행해서 get_sensitive_masked/set_sensitive/
--- get_ssn_full 이 `current_setting('app.enc_key', true)` 버전으로 만들어져 있는 경우를 위한
--- 단독 hotfix. 이 파일만 Studio SQL 편집기에 붙여 실행하면 3개 함수가 Vault 버전으로 교체된다.
+-- 이 파일 하나만 Studio SQL 편집기에 붙여 실행하면 아래 2가지가 한 번에 반영된다:
+--
+-- 1) 암호화 키를 GUC(`current_setting('app.enc_key')`)가 아니라 Supabase Vault
+--    (`vault.decrypted_secrets`)에서 읽도록 3개 함수를 교체한다. `alter role authenticator
+--    set app.enc_key=...` 는 Supabase 의 postgres 롤이 슈퍼유저가 아니라서
+--    `42501 permission denied to set parameter` 로 실패하기 때문.
+-- 2) 민감정보 표시정책 변경(사용자 지시):
+--    - 개인메일(email): 마스킹 없이 전체 값 반환(get_sensitive_masked 안에서).
+--    - 휴대폰/급여계좌/경비계좌: 기본은 그대로 마스킹, hr 가 "보이기" 버튼으로 개별 필드
+--      원본을 조회할 수 있는 신규 RPC `reveal_sensitive_field(emp uuid, field text)` 추가.
+--    - 주민번호/주소/비상연락망: 마스킹 정책 그대로 유지. 주민번호 원본은 기존
+--      `get_ssn_full` 로도 되고, `reveal_sensitive_field(emp,'ssn')` 로도 된다(하위호환으로
+--      get_ssn_full 은 남겨둠 — 신규 개발은 reveal_sensitive_field 로 통일 권장).
 --
 -- 실행 전, 아직 키를 Vault 에 등록하지 않았다면 먼저 1회:
 --   select vault.create_secret('<강한 키>', 'app_enc_key');
 -- (키 회전: select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');)
 --
--- 배경: `alter role authenticator set app.enc_key=...` 방식은 Supabase 의 postgres 롤이
--- 슈퍼유저가 아니라서 `42501 permission denied to set parameter` 로 실패한다. 이 hotfix 는
--- 0005_sensitive_rpc.sql 의 최신 버전(Vault 사용)과 동일한 내용이다 — 신규로 처음부터
--- 적용하는 경우라면 이 파일 대신 최신 APPLY_ALL.sql/0005_sensitive_rpc.sql 을 쓰면 된다.
+-- 이 파일은 0005_sensitive_rpc.sql 최신 버전과 동일한 내용이다 — 신규로 처음부터 적용하는
+-- 경우라면 이 파일 대신 최신 APPLY_ALL.sql/0005_sensitive_rpc.sql 을 쓰면 된다.
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
@@ -93,9 +101,9 @@ begin
         end
       ) end,
 
+    -- [정책 변경] 개인메일은 마스킹하지 않고 전체 값을 반환한다(사용자 지시).
     'email', case when r.email_enc is null then null
-      else left(split_part(pgp_sym_decrypt(r.email_enc, k), '@', 1), 2) || '***@' ||
-           split_part(pgp_sym_decrypt(r.email_enc, k), '@', 2) end
+      else pgp_sym_decrypt(r.email_enc, k) end
   );
 end;
 $$;
@@ -189,9 +197,48 @@ $$;
 revoke execute on function public.get_ssn_full(uuid) from public;
 grant execute on function public.get_ssn_full(uuid) to authenticated; -- 함수 내부에서 is_hr() 재확인
 
+-- [정책 변경] 필드별 원본 조회("보이기" 버튼): 휴대폰·계좌는 기본 마스킹 유지, hr 가 이 RPC 로
+-- 개별 필드 원본을 조회할 수 있다. ssn/addr/reg_addr/emergency 도 화이트리스트에 포함하되,
+-- 표시정책상 화면에서 주로 쓰는 건 phone/salary_acct/expense_acct 다. 호출마다 감사로그 기록.
+-- get_ssn_full 은 하위호환으로 남겨두되, 신규 개발은 reveal_sensitive_field(emp,'ssn') 로 통일 권장.
+create or replace function public.reveal_sensitive_field(emp uuid, field text)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
+  v text;
+begin
+  if not public.is_hr() then raise exception 'forbidden'; end if;
+  if k is null or k = '' then raise exception 'encryption key not set'; end if;
+  -- 화이트리스트 (동적 SQL 금지, CASE 로만)
+  select case field
+    when 'phone' then pgp_sym_decrypt(phone_enc, k)
+    when 'salary_acct' then pgp_sym_decrypt(salary_acct_enc, k)
+    when 'expense_acct' then pgp_sym_decrypt(expense_acct_enc, k)
+    when 'ssn' then pgp_sym_decrypt(ssn_enc, k)
+    when 'emergency' then pgp_sym_decrypt(emergency_enc, k)
+    when 'addr' then pgp_sym_decrypt(addr_enc, k)
+    when 'reg_addr' then pgp_sym_decrypt(reg_addr_enc, k)
+    else null end
+  into v from public.employee_sensitive where employee_id = emp;
+  if field not in ('phone','salary_acct','expense_acct','ssn','emergency','addr','reg_addr') then
+    raise exception 'invalid field';
+  end if;
+  insert into public.audit_log(actor, action, target_id, target_table, column_name)
+    values (auth.uid(), 'reveal', emp, 'employee_sensitive', field);
+  return v;
+end $$;
+
+revoke execute on function public.reveal_sensitive_field(uuid, text) from public;
+grant execute on function public.reveal_sensitive_field(uuid, text) to authenticated; -- 내부 is_hr 재확인
+
 -- [보안 리뷰 반영] employee_sensitive 는 FORCE ROW LEVEL SECURITY 라서, 이 SECURITY DEFINER
 -- 함수들이 실제로 값을 읽으려면 함수 소유자가 RLS 를 우회하는(BYPASSRLS, 통상 postgres 슈퍼유저)
 -- 롤이어야 한다. 마이그레이션을 다른 롤로 실행했을 경우를 대비해 명시적으로 고정한다.
 alter function public.get_sensitive_masked(uuid) owner to postgres;
 alter function public.set_sensitive(uuid, jsonb) owner to postgres;
 alter function public.get_ssn_full(uuid) owner to postgres;
+alter function public.reveal_sensitive_field(uuid, text) owner to postgres;
