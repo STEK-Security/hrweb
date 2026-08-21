@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CalendarEventItem, DailyChecklistItem } from '../types';
+import React, { useEffect, useState } from 'react';
+import { CalendarEventItem } from '../types';
 import { EditScheduleModal } from './EditScheduleModal';
 import {
   Calendar as CalendarIcon,
@@ -17,13 +17,12 @@ import {
 
 interface HRCalendarViewProps {
   events: CalendarEventItem[];
-  checklists: DailyChecklistItem[];
   onOpenAddSchedule: () => void;
   onUpdateEvent?: (event: CalendarEventItem) => void;
   onDeleteEvent?: (eventId: string) => void;
-  onToggleChecklist: (id: string) => void;
-  onAddChecklist: (item: DailyChecklistItem) => void;
   onSyncDB: () => void;
+  /** 현재 표시 중인 연/월이 바뀔 때(최초 마운트 포함) 알림 — 표시월 기준 자동이벤트 필터링용. */
+  onMonthChange?: (year: number, month: number) => void;
 }
 
 export const HRCalendarView: React.FC<HRCalendarViewProps> = ({
@@ -32,11 +31,17 @@ export const HRCalendarView: React.FC<HRCalendarViewProps> = ({
   onUpdateEvent,
   onDeleteEvent,
   onSyncDB,
+  onMonthChange,
 }) => {
   const today = new Date();
   const [viewYear, setViewYear] = useState<number>(today.getFullYear());
   const [viewMonth, setViewMonth] = useState<number>(today.getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState<number>(today.getDate());
+
+  useEffect(() => {
+    onMonthChange?.(viewYear, viewMonth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewYear, viewMonth]);
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [isSyncing, setIsSyncing] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEventItem | null>(null);
