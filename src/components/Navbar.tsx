@@ -12,6 +12,10 @@ import {
   ClipboardCheck,
   LogOut,
   ShieldAlert,
+  ArrowLeftRight,
+  GraduationCap,
+  Award,
+  Wallet,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 
@@ -50,7 +54,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin,
   onSelectEmployee,
 }) => {
-  // 인건비/교육관리/평가관리는 원천데이터 없어 Phase11b 에서 처리 예정 — 지금은 메뉴에서 숨긴다.
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
       id: '대시보드',
@@ -73,6 +76,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: <FileSpreadsheet className="w-4 h-4" />,
     },
     {
+      id: '발령이력',
+      label: '발령 이력',
+      icon: <ArrowLeftRight className="w-4 h-4" />,
+    },
+    {
       id: '구성다양성',
       label: '구성·다양성',
       icon: <Users2 className="w-4 h-4" />,
@@ -86,6 +94,21 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: '휴직자관리',
       label: '휴직자 관리',
       icon: <UserCheck className="w-4 h-4" />,
+    },
+    {
+      id: '교육관리',
+      label: '교육 관리',
+      icon: <GraduationCap className="w-4 h-4" />,
+    },
+    {
+      id: '평가관리',
+      label: '평가 관리',
+      icon: <Award className="w-4 h-4" />,
+    },
+    {
+      id: '인건비',
+      label: '인건비',
+      icon: <Wallet className="w-4 h-4" />,
     },
     {
       id: '데이터품질',

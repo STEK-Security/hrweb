@@ -12,6 +12,11 @@ import { DiversityPage } from './features/diversity/DiversityPage';
 import { OrgChartPage } from './features/org/OrgChartPage';
 import { DataQualityPage } from './features/quality/DataQualityPage';
 import { CertificatePage } from './features/cert/CertificatePage';
+import { TransfersPage } from './features/transfers/TransfersPage';
+import { CalendarPage } from './features/calendar/CalendarPage';
+import { TrainingPage } from './features/training/TrainingPage';
+import { EvaluationPage } from './features/evaluation/EvaluationPage';
+import { PayrollPlaceholderPage } from './features/payroll/PayrollPlaceholderPage';
 import { EmployeeDrawer } from './features/roster/EmployeeDrawer';
 import type { ActiveMenu } from './types';
 
@@ -87,6 +92,16 @@ export default function App() {
           <DataQualityPage />
         ) : activeMenu === '증명서' ? (
           <CertificatePage />
+        ) : activeMenu === '발령이력' ? (
+          <TransfersPage />
+        ) : activeMenu === '캘린더' ? (
+          <CalendarPage />
+        ) : activeMenu === '교육관리' ? (
+          <TrainingPage />
+        ) : activeMenu === '평가관리' ? (
+          <EvaluationPage />
+        ) : activeMenu === '인건비' ? (
+          <PayrollPlaceholderPage />
         ) : activeMenu === '감사로그' && isAdmin ? (
           <AuditLogPage />
         ) : (
