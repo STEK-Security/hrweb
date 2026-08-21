@@ -5,6 +5,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { Navbar } from './components/Navbar';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { RosterPage } from './features/roster/RosterPage';
+import { LeavePage } from './features/leave/LeavePage';
 import { AuditLogPage } from './features/admin/AuditLogPage';
 import type { ActiveMenu } from './types';
 
@@ -66,6 +67,8 @@ export default function App() {
       <main className="w-full px-4 sm:px-6 lg:px-8 2xl:px-10 py-6">
         {activeMenu === '인력현황' ? (
           <RosterPage />
+        ) : activeMenu === '휴직자관리' ? (
+          <LeavePage />
         ) : activeMenu === '감사로그' && isAdmin ? (
           <AuditLogPage />
         ) : (

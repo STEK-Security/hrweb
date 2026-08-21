@@ -111,6 +111,26 @@ export async function listLeave(): Promise<LeaveRecord[]> {
   return data as LeaveRecord[];
 }
 
+/** 휴직 신규 등록. 성공 시 새 leave_records.id, 실패 시 null. */
+export async function createLeave(
+  fields: Partial<Omit<LeaveRecord, 'id' | 'created_at' | 'updated_at'>>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('leave_records').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+/** 휴직 기록 수정(상태전환·대체인력 포함). */
+export async function updateLeave(
+  id: string,
+  fields: Partial<Omit<LeaveRecord, 'id' | 'created_at' | 'updated_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('leave_records').update(fields).eq('id', id);
+  return !error;
+}
+
 /** 민감값 마스킹 조회(hr 만 값이 나옴, 그 외는 RPC 자체가 forbidden 예외). */
 export async function getSensitiveMasked(empId: string): Promise<Record<string, unknown> | null> {
   if (!supabase) return null;
