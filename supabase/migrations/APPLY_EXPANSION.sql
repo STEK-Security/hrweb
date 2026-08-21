@@ -1,31 +1,23 @@
--- hotfix_0011_enckey_vault.sql
--- 이 파일 하나만 Studio SQL 편집기에 붙여 실행하면 아래가 한 번에 반영된다:
+-- APPLY_EXPANSION.sql
+-- 전제: APPLY_ALL.sql(0001~0010) 이 이미 적용되어 있고, vault.create_secret('<강한 키>','app_enc_key')
+-- 도 이미 1회 실행되어 있다(README 2절). 이 파일은 그 이후 확장분(0011~0014) 전체를 한 번에
+-- 반영한다 — Studio SQL 편집기에 이 파일 전체를 그대로 복붙해 실행하면 된다.
 --
--- 1) 암호화 키를 GUC(`current_setting('app.enc_key')`)가 아니라 Supabase Vault
---    (`vault.decrypted_secrets`)에서 읽도록 4개 함수를 교체한다. `alter role authenticator
---    set app.enc_key=...` 는 Supabase 의 postgres 롤이 슈퍼유저가 아니라서
---    `42501 permission denied to set parameter` 로 실패하기 때문.
--- 2) 민감정보 표시정책 변경(사용자 지시):
---    - 개인메일(email): 마스킹 없이 전체 값 반환(get_sensitive_masked 안에서).
---    - 휴대폰/급여계좌/경비계좌: 기본은 그대로 마스킹, hr 가 "보이기" 버튼으로 개별 필드
---      원본을 조회할 수 있는 신규 RPC `reveal_sensitive_field(emp uuid, field text)` 추가.
---    - 주민번호/주소/비상연락망: 마스킹 정책 그대로 유지. 주민번호 원본은 기존
---      `get_ssn_full` 로도 되고, `reveal_sensitive_field(emp,'ssn')` 로도 된다(하위호환으로
---      get_ssn_full 은 남겨둠 — 신규 개발은 reveal_sensitive_field 로 통일 권장).
--- 3) [배포 후 실 진단] `42883 function pgp_sym_decrypt(bytea, text) does not exist` 수정 —
---    Supabase 는 pgcrypto 를 `extensions` 스키마에 설치하는데 함수들이 `search_path=public`
---    만 갖고 있어 못 찾았다. 4개 함수 전부 `set search_path = public, extensions` 로 교체.
---    (Studio 에서 postgres 세션으로 직접 실행한 seed 는 기본 search_path 에 extensions 가
---    들어 있어 우연히 성공했던 것 — RPC 는 함수 고정 search_path 를 쓰므로 별도로 필요.)
+-- 모든 문장이 IF EXISTS/IF NOT EXISTS/CREATE OR REPLACE 기반이라 재실행해도 안전하다.
+-- 구성(순서 고정):
+--   (a) 0011: 민감 RPC 4개 search_path=public,extensions 수정 + email 마스킹 해제 + reveal_sensitive_field
+--   (b) 0012: user_roles 2역할(사용자/관리자) 전환 + is_hr/is_admin 재정의 + 팀장/일반 정책·team_managers 정리
+--             + handle_new_user() role='사용자' 버그 수정(0012 를 개별 적용했다면 이미 반영됐을 수 있다)
+--   (c) 0013: audit_log 컬럼 확장(ip/user_agent/meta/actor_email) + log_event RPC(서버측 IP 기록)
+--   (d) 0014: employees/leave_records soft delete(deleted_at)
 --
--- 실행 전, 아직 키를 Vault 에 등록하지 않았다면 먼저 1회:
---   select vault.create_secret('<강한 키>', 'app_enc_key');
--- (키 회전: select vault.update_secret((select id from vault.secrets where name='app_enc_key'), '<새 키>');)
---
--- 이 파일은 0005_sensitive_rpc.sql 최신 버전과 동일한 내용이다 — 신규로 처음부터 적용하는
--- 경우라면 이 파일 대신 최신 APPLY_ALL.sql/0005_sensitive_rpc.sql 을 쓰면 된다.
+-- 개별 hotfix_0011~0014 파일은 그대로 남아있다(파일 단위로 하나씩 적용하고 싶을 때 사용).
 
--- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
+-- ============================================================
+-- (a) hotfix_0011_enckey_vault.sql
+-- ============================================================
+
+-- 마스킹 조회: hr(사용자/관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
 returns jsonb
 language plpgsql
@@ -63,9 +55,6 @@ begin
     else pgp_sym_decrypt(r.reg_addr_enc, k)::jsonb end;
 
   return jsonb_build_object(
-    -- [보안 리뷰 반영] 뒤7자리(고유식별 번호)가 아니라 앞8자리(생년월일6+하이픈+성별코드1,
-    -- 예: "900101-1")만 남기고 나머지 6자리를 마스킹한다("900101-1******").
-    -- 뒤7자리를 노출하면 생년월일 평문 컬럼과 결합해 주민번호 전체가 역산 가능했다.
     'ssn', case when r.ssn_enc is null then null
       else left(pgp_sym_decrypt(r.ssn_enc, k), 8) || '******' end,
 
@@ -106,7 +95,6 @@ begin
         end
       ) end,
 
-    -- [정책 변경] 개인메일은 마스킹하지 않고 전체 값을 반환한다(사용자 지시).
     'email', case when r.email_enc is null then null
       else pgp_sym_decrypt(r.email_enc, k) end
   );
@@ -114,12 +102,8 @@ end;
 $$;
 
 revoke execute on function public.get_sensitive_masked(uuid) from public;
-grant execute on function public.get_sensitive_masked(uuid) to authenticated; -- 함수 내부에서 is_hr() 재확인
+grant execute on function public.get_sensitive_masked(uuid) to authenticated;
 
--- 원본 저장/갱신: hr 만. payload 는 아래 키를 선택적으로 포함하는 jsonb.
---   { "ssn": "...", "salary_acct": {"bank":"..","number":"..","owner":".."},
---     "expense_acct": {...}, "addr": {"postal":"..","address":".."},
---     "reg_addr": {...}, "phone": "...", "emergency": "...", "email": "..." }
 create or replace function public.set_sensitive(emp uuid, payload jsonb)
 returns void
 language plpgsql
@@ -161,7 +145,6 @@ begin
     updated_at = now()
   where employee_id = emp;
 
-  -- 민감 원본은 절대 기록하지 않는다. 변경된 컬럼명만 건별로 남긴다.
   insert into public.audit_log (actor, action, target_id, target_table, column_name)
     select auth.uid(), 'set_sensitive', emp, 'employee_sensitive', key
     from jsonb_object_keys(payload) as key;
@@ -169,9 +152,8 @@ end;
 $$;
 
 revoke execute on function public.set_sensitive(uuid, jsonb) from public;
-grant execute on function public.set_sensitive(uuid, jsonb) to authenticated; -- 함수 내부에서 is_hr() 재확인
+grant execute on function public.set_sensitive(uuid, jsonb) to authenticated;
 
--- 주민번호 원본: hr 만, 호출 자체를 감사로그에 남긴다(최소노출 원칙).
 create or replace function public.get_ssn_full(emp uuid)
 returns text
 language plpgsql
@@ -200,12 +182,8 @@ end;
 $$;
 
 revoke execute on function public.get_ssn_full(uuid) from public;
-grant execute on function public.get_ssn_full(uuid) to authenticated; -- 함수 내부에서 is_hr() 재확인
+grant execute on function public.get_ssn_full(uuid) to authenticated;
 
--- [정책 변경] 필드별 원본 조회("보이기" 버튼): 휴대폰·계좌는 기본 마스킹 유지, hr 가 이 RPC 로
--- 개별 필드 원본을 조회할 수 있다. ssn/addr/reg_addr/emergency 도 화이트리스트에 포함하되,
--- 표시정책상 화면에서 주로 쓰는 건 phone/salary_acct/expense_acct 다. 호출마다 감사로그 기록.
--- get_ssn_full 은 하위호환으로 남겨두되, 신규 개발은 reveal_sensitive_field(emp,'ssn') 로 통일 권장.
 create or replace function public.reveal_sensitive_field(emp uuid, field text)
 returns text
 language plpgsql
@@ -218,7 +196,6 @@ declare
 begin
   if not public.is_hr() then raise exception 'forbidden'; end if;
   if k is null or k = '' then raise exception 'encryption key not set'; end if;
-  -- 화이트리스트 (동적 SQL 금지, CASE 로만)
   select case field
     when 'phone' then pgp_sym_decrypt(phone_enc, k)
     when 'salary_acct' then pgp_sym_decrypt(salary_acct_enc, k)
@@ -238,12 +215,143 @@ begin
 end $$;
 
 revoke execute on function public.reveal_sensitive_field(uuid, text) from public;
-grant execute on function public.reveal_sensitive_field(uuid, text) to authenticated; -- 내부 is_hr 재확인
+grant execute on function public.reveal_sensitive_field(uuid, text) to authenticated;
 
--- [보안 리뷰 반영] employee_sensitive 는 FORCE ROW LEVEL SECURITY 라서, 이 SECURITY DEFINER
--- 함수들이 실제로 값을 읽으려면 함수 소유자가 RLS 를 우회하는(BYPASSRLS, 통상 postgres 슈퍼유저)
--- 롤이어야 한다. 마이그레이션을 다른 롤로 실행했을 경우를 대비해 명시적으로 고정한다.
 alter function public.get_sensitive_masked(uuid) owner to postgres;
 alter function public.set_sensitive(uuid, jsonb) owner to postgres;
 alter function public.get_ssn_full(uuid) owner to postgres;
 alter function public.reveal_sensitive_field(uuid, text) owner to postgres;
+
+-- ============================================================
+-- (b) hotfix_0012_two_roles.sql (2역할 + handle_new_user 버그 수정 포함)
+-- ============================================================
+
+alter table public.user_roles drop constraint if exists user_roles_role_check;
+
+update public.user_roles set role = '관리자' where role = '시스템관리자';
+update public.user_roles set role = '사용자' where role in ('인사담당자','팀장','일반');
+
+alter table public.user_roles add constraint user_roles_role_check
+  check (role in ('사용자','관리자'));
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select public.current_role() = '관리자'
+$$;
+
+create or replace function public.is_hr()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select public.current_role() in ('사용자','관리자')
+$$;
+
+drop policy if exists "emp mgr read" on public.employees;
+drop policy if exists "emp self read" on public.employees;
+drop policy if exists "leave mgr read" on public.leave_records;
+drop policy if exists "leave self read" on public.leave_records;
+
+drop policy if exists "team_managers hr all" on public.team_managers;
+drop policy if exists "team_managers self read" on public.team_managers;
+drop table if exists public.team_managers;
+
+-- [버그 수정] handle_new_user() 가 role='일반' 으로 만들면 위 CHECK 위반으로 신규 가입이 막힌다.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email) values (new.id, new.email)
+    on conflict (id) do nothing;
+  insert into public.user_roles (user_id, role) values (new.id, '사용자')
+    on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
+
+-- ============================================================
+-- (c) hotfix_0013_audit_events.sql
+-- ============================================================
+
+alter table public.audit_log add column if not exists ip inet;
+alter table public.audit_log add column if not exists user_agent text;
+alter table public.audit_log add column if not exists meta jsonb;
+alter table public.audit_log add column if not exists actor_email text;
+
+create or replace function public.log_event(
+  p_action text,
+  p_target_id uuid default null,
+  p_target_table text default null,
+  p_meta jsonb default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_headers jsonb;
+  v_ip inet;
+  v_ua text;
+  v_actor_email text;
+begin
+  if p_action not in (
+    'login_success','login_fail','logout','view_screen','view_employee',
+    'create_employee','update_employee','delete_employee',
+    'create_leave','update_leave','export','reveal','read_ssn_full','role_change'
+  ) then
+    raise exception 'invalid action';
+  end if;
+
+  if v_actor is null and p_action not in ('login_success','login_fail') then
+    raise exception 'forbidden';
+  end if;
+
+  begin
+    v_headers := current_setting('request.headers', true)::jsonb;
+  exception when others then
+    v_headers := null;
+  end;
+
+  if v_headers is not null then
+    v_ua := v_headers ->> 'user-agent';
+    begin
+      v_ip := split_part(v_headers ->> 'x-forwarded-for', ',', 1)::inet;
+    exception when others then
+      v_ip := null;
+    end;
+  end if;
+
+  v_actor_email := p_meta ->> 'email';
+
+  insert into public.audit_log
+    (actor, action, target_id, target_table, meta, ip, user_agent, actor_email)
+  values
+    (v_actor, p_action, p_target_id, p_target_table, p_meta, v_ip, v_ua, v_actor_email);
+end;
+$$;
+
+alter function public.log_event(text, uuid, text, jsonb) owner to postgres;
+
+revoke execute on function public.log_event(text, uuid, text, jsonb) from public;
+grant execute on function public.log_event(text, uuid, text, jsonb) to authenticated, anon;
+
+-- ============================================================
+-- (d) hotfix_0014_soft_delete.sql
+-- ============================================================
+
+alter table public.employees add column if not exists deleted_at timestamptz;
+alter table public.leave_records add column if not exists deleted_at timestamptz;
+
+grant select (deleted_at) on public.employees to authenticated;

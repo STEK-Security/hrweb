@@ -5,13 +5,16 @@
  * 원본을 개별 조회한다(호출마다 감사로그 기록). 그 외 역할은 섹션 자체를 숨긴다.
  */
 import { useEffect, useState } from 'react';
-import { X, ShieldAlert, Eye, Loader2 } from 'lucide-react';
+import { X, ShieldAlert, Eye, Loader2, Pencil } from 'lucide-react';
 import { getEmployee, getSensitiveMasked, revealField, type Employee } from '../../lib/db';
 import { useRole } from '../../lib/auth';
+import { logEvent } from '../../lib/audit';
 
 interface EmployeeDrawerProps {
   employeeId: string | null;
   onClose: () => void;
+  /** 있으면 "수정" 버튼을 보여준다(hr 만). EmployeeForm 을 여는 콜백. */
+  onEdit?: (id: string) => void;
 }
 
 type MaskedAcct = { bank?: string; number?: string; owner?: string } | null;
@@ -23,7 +26,7 @@ type Masked = {
   email?: string | null;
 } | null;
 
-const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
+export const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
   {
     title: '기본정보',
     fields: [
@@ -76,7 +79,7 @@ const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
   },
 ];
 
-const HR_ROLES = new Set(['시스템관리자', '인사담당자']);
+export const HR_ROLES = new Set(['사용자', '관리자']);
 
 function Field({ label, value }: { label: string; value: unknown }) {
   return (
@@ -103,7 +106,7 @@ function RevealButton({ onClick, revealing }: { onClick: () => void; revealing: 
   );
 }
 
-export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
+export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerProps) {
   const role = useRole();
   const isHr = !!role && HR_ROLES.has(role);
 
@@ -120,6 +123,7 @@ export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
     setLoading(true);
     setMasked(null);
     setRevealed({});
+    logEvent('view_employee', { targetId: employeeId, targetTable: 'employees' });
     getEmployee(employeeId).then((e) => {
       if (!cancelled) {
         setEmployee(e);
@@ -147,6 +151,7 @@ export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
     const value = await revealField(employeeId, field);
     setRevealed((r) => ({ ...r, [field]: value }));
     setRevealing((r) => ({ ...r, [field]: false }));
+    logEvent('reveal', { targetId: employeeId, targetTable: 'employee_sensitive', meta: { field } });
   };
 
   const parseAcct = (raw: string | null): MaskedAcct => {
@@ -168,14 +173,26 @@ export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
               {employee ? `사번 ${employee._id} · ${employee._team}` : ''}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {isHr && onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(employeeId)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                수정
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="닫기"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-5 text-sm">

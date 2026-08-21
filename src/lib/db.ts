@@ -33,10 +33,30 @@ export interface OrgSetting {
   updated_at: string;
 }
 
-/** employees 전체 조회 → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
+export interface AuditLogRow {
+  id: number;
+  actor: string | null;
+  action: string;
+  target_id: string | null;
+  target_table: string | null;
+  column_name: string | null;
+  meta: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  actor_email: string | null;
+  ts: string;
+}
+
+export interface ProfileLite {
+  id: string;
+  email: string | null;
+  name: string | null;
+}
+
+/** employees 전체 조회(soft delete 된 행 제외) → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('employees').select('*');
+  const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
   if (error || !data) return [];
   return deriveAll(data as RawRow[]);
 }
@@ -49,12 +69,66 @@ export async function getEmployee(id: string): Promise<Employee | null> {
   return derive(data as RawRow, 0);
 }
 
+/** 비민감 필드 신규 등록. 성공 시 새 employees.id, 실패 시 null. */
+export async function createEmployee(
+  fields: Record<string, string | number | null>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('employees').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+/** 비민감 필드 수정. */
+export async function updateEmployee(
+  id: string,
+  fields: Record<string, string | number | null>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employees').update(fields).eq('id', id);
+  return !error;
+}
+
+/** soft delete: deleted_at 만 채운다(물리 삭제 없음). */
+export async function softDeleteEmployee(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employees').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  return !error;
+}
+
+/** 민감값 등록/수정(변경된 키만 payload에 포함, set_sensitive RPC). */
+export async function setSensitive(empId: string, payload: Record<string, unknown>): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.rpc('set_sensitive', { emp: empId, payload });
+  return !error;
+}
+
 /** 휴직 기록 전체 조회. */
 export async function listLeave(): Promise<LeaveRecord[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.from('leave_records').select('*');
   if (error || !data) return [];
   return data as LeaveRecord[];
+}
+
+/** 휴직 신규 등록. 성공 시 새 leave_records.id, 실패 시 null. */
+export async function createLeave(
+  fields: Partial<Omit<LeaveRecord, 'id' | 'created_at' | 'updated_at'>>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('leave_records').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+/** 휴직 기록 수정(상태전환·대체인력 포함). */
+export async function updateLeave(
+  id: string,
+  fields: Partial<Omit<LeaveRecord, 'id' | 'created_at' | 'updated_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('leave_records').update(fields).eq('id', id);
+  return !error;
 }
 
 /** 민감값 마스킹 조회(hr 만 값이 나옴, 그 외는 RPC 자체가 forbidden 예외). */
@@ -79,4 +153,43 @@ export async function listOrgSettings(): Promise<OrgSetting[]> {
   const { data, error } = await supabase.from('org_settings').select('*');
   if (error || !data) return [];
   return data as OrgSetting[];
+}
+
+export interface AuditLogFilter {
+  from?: string;
+  to?: string;
+  action?: string;
+  actorId?: string;
+  targetTable?: string;
+}
+
+/** 감사로그 페이지 조회(관리자만 RLS 통과, 그 외는 빈 배열). ts 내림차순, 필터+페이지네이션. */
+export async function listAuditLog(
+  filter: AuditLogFilter,
+  page: number,
+  pageSize: number
+): Promise<{ rows: AuditLogRow[]; total: number }> {
+  if (!supabase) return { rows: [], total: 0 };
+  let query = supabase
+    .from('audit_log')
+    .select('*', { count: 'exact' })
+    .order('ts', { ascending: false });
+  if (filter.from) query = query.gte('ts', filter.from);
+  if (filter.to) query = query.lte('ts', filter.to);
+  if (filter.action) query = query.eq('action', filter.action);
+  if (filter.actorId) query = query.eq('actor', filter.actorId);
+  if (filter.targetTable) query = query.eq('target_table', filter.targetTable);
+
+  const start = page * pageSize;
+  const { data, error, count } = await query.range(start, start + pageSize - 1);
+  if (error || !data) return { rows: [], total: 0 };
+  return { rows: data as AuditLogRow[], total: count ?? data.length };
+}
+
+/** actor 표시용 프로필 목록(이메일·이름). 관리자는 전체, 그 외는 본인만(RLS). */
+export async function listProfiles(): Promise<ProfileLite[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('profiles').select('id,email,name');
+  if (error || !data) return [];
+  return data as ProfileLite[];
 }

@@ -29,13 +29,21 @@
 -- 주의: Vault 든 대체안이든, Studio·Postgres(5432) 외부차단(스펙 8절 P0-5)이 반드시
 -- 전제되어야 한다 — 이게 깨지면 키 노출 = 전 직원 민감정보 노출이다.
 -- ============================================================
+--
+-- [배포 후 실 진단 반영 — v3] Supabase 는 pgcrypto 를 `public` 이 아니라 `extensions` 스키마에
+-- 설치한다. SECURITY DEFINER 함수는 `search_path` 를 명시적으로 고정해야 하므로(하이재킹 방지),
+-- `set search_path = public` 만 있으면 `pgp_sym_encrypt`/`pgp_sym_decrypt` 를 못 찾아
+-- `42883 function ... does not exist` 로 실패한다. 아래 4개 함수 전부
+-- `set search_path = public, extensions` 로 통일한다 — `extensions` 는 Supabase 가 신뢰
+-- 확장만 설치하는 스키마라 하이재킹 위험이 없다(pgcrypto 가 로컬처럼 `public` 에 있어도
+-- `public` 이 먼저 오니 그대로 잘 동작한다).
 
 -- 마스킹 조회: hr(인사담당자/시스템관리자)만 호출 가능. 8개 민감항목 전부 마스킹해서 반환.
 create or replace function public.get_sensitive_masked(emp uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 stable
 as $$
 declare
@@ -129,7 +137,7 @@ create or replace function public.set_sensitive(emp uuid, payload jsonb)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
@@ -181,7 +189,7 @@ create or replace function public.get_ssn_full(emp uuid)
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
@@ -215,7 +223,7 @@ create or replace function public.reveal_sensitive_field(emp uuid, field text)
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');

@@ -101,13 +101,29 @@ CASE 화이트리스트로만 매칭(동적 SQL 없음), 호출마다 `audit_log
 `user_roles` 는 self-write 가 금지되어 있어(P0-2) SQL 로 직접 심어야 한다.
 
 1. Supabase Auth 로 계정 하나를 만든다(Studio → Authentication → 초대 또는 가입 플로우).
-   `handle_new_user()` 트리거가 `profiles`/`user_roles` 기본행(role='일반')을 자동 생성한다.
+   `handle_new_user()` 트리거가 `profiles`/`user_roles` 기본행(role='사용자')을 자동 생성한다.
 2. Studio SQL 편집기(관리자 세션, RLS 우회되는 postgres 롤)에서:
    ```sql
    update public.user_roles set role = '시스템관리자', updated_by = null
    where user_id = '<방금 만든 계정의 auth.users.id>';
    ```
 3. 이후부터는 이 계정으로 로그인해 관리자 화면(Task 6.1, 아직 미구현)에서 다른 계정 role 을 부여한다.
+
+## 3-1. 확장분 전체 적용(0011~0014) — 권장
+
+이미 `APPLY_ALL.sql`(0001~0010)을 적용하고 `vault.create_secret` 도 실행해둔 배포 DB 라면,
+Studio SQL 편집기에서 **`supabase/migrations/APPLY_EXPANSION.sql`** 하나만 그대로 복붙해
+실행하면 0011~0014(민감 RPC search_path 수정, 2역할 전환, 감사이벤트 확장, soft delete)가
+전부 순서대로 반영된다(재실행해도 안전). 개별 `hotfix_0011~0014_*.sql` 파일들은 파일 단위로
+하나씩 적용하고 싶을 때를 위해 그대로 남겨뒀다 — 내용은 `APPLY_EXPANSION.sql` 의 해당 절과 동일.
+
+2역할(T8.2)은 `시스템관리자/인사담당자/팀장/일반` 4개를 `사용자/관리자` 2개로 단순화한다
+(사용자=인사팀, 전 기능 / 관리자=+로그·계정·설정). `handle_new_user()` 트리거도 함께
+`role='사용자'` 로 고쳐야 한다 — 안 고치면 CHECK 제약이 `사용자/관리자` 만 허용하는데 트리거는
+여전히 `'일반'` 을 넣으려 해서 **신규 계정 가입이 막힌다**(`APPLY_EXPANSION.sql`/
+`hotfix_0012_two_roles.sql` 둘 다 이 수정을 포함한다). 신규로 처음부터 적용하는 경우엔
+`0001~0010` 다음에 `0012_two_roles.sql` 을 적용하면 된다(0002 원본이 이미 `role='사용자'` 로
+고쳐져 있어 별도 트리거 수정이 필요 없다).
 
 ## 4. 검증
 

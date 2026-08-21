@@ -6,8 +6,10 @@
 import { useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './supabase';
+import { logEvent } from './audit';
 
-export type Role = '시스템관리자' | '인사담당자' | '팀장' | '일반';
+// 0012/hotfix_0012 2역할 마이그레이션 이후 DB 값과 일치시킨다(사용자=인사팀 전 기능, 관리자=+로그·계정·설정).
+export type Role = '사용자' | '관리자';
 
 /** 이메일/비밀번호 로그인. 실패 시 한국어 에러 메시지를 던진다. */
 export async function signIn(email: string, password: string): Promise<Session> {
@@ -16,16 +18,20 @@ export async function signIn(email: string, password: string): Promise<Session> 
   }
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
+    await logEvent('login_fail', { meta: { email } });
     throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
   }
   if (!data.session) {
+    await logEvent('login_fail', { meta: { email } });
     throw new Error('로그인에 실패했습니다. 다시 시도해주세요.');
   }
+  await logEvent('login_success', { meta: { email } });
   return data.session;
 }
 
 export async function signOut(): Promise<void> {
   if (!supabase) return;
+  await logEvent('logout');
   await supabase.auth.signOut();
 }
 
@@ -44,21 +50,24 @@ export function onAuthChange(cb: (session: Session | null) => void): () => void 
   return () => data.subscription.unsubscribe();
 }
 
-async function fetchRole(userId: string): Promise<Role> {
-  if (!supabase) return '일반';
+/** role 조회 결과. 실패해도 '일반'으로 조용히 폴백하지 않고 error 로 명시한다. */
+async function fetchRole(userId: string): Promise<{ role: Role | null; error: boolean }> {
+  if (!supabase) return { role: null, error: true };
   const { data, error } = await supabase
     .from('user_roles')
     .select('role')
     .eq('user_id', userId)
     .single();
-  if (error || !data) return '일반';
-  return (data.role as Role) ?? '일반';
+  if (error || !data) return { role: null, error: true };
+  return { role: data.role as Role, error: false };
 }
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   role: Role | null;
+  /** role 조회가 실패했음을 나타낸다. session 은 유지된 채로 화면이 안내를 보여줘야 한다. */
+  roleError: boolean;
   loading: boolean;
 }
 
@@ -68,6 +77,7 @@ export function useAuth(): AuthState {
     session: null,
     user: null,
     role: null,
+    roleError: false,
     loading: true,
   });
 
@@ -76,11 +86,15 @@ export function useAuth(): AuthState {
 
     async function applySession(session: Session | null) {
       if (!session) {
-        if (!cancelled) setState({ session: null, user: null, role: null, loading: false });
+        if (!cancelled) {
+          setState({ session: null, user: null, role: null, roleError: false, loading: false });
+        }
         return;
       }
-      const role = await fetchRole(session.user.id);
-      if (!cancelled) setState({ session, user: session.user, role, loading: false });
+      const { role, error } = await fetchRole(session.user.id);
+      if (!cancelled) {
+        setState({ session, user: session.user, role, roleError: error, loading: false });
+      }
     }
 
     getSession().then(applySession);
