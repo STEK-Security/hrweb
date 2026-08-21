@@ -54,7 +54,7 @@ export function PayrollPlaceholderPage() {
   return (
     <div className="space-y-3">
       <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
-        데모 데이터 · 외부 연동 대기
+        샘플 인건비 · 급여시스템 연동 시 실데이터 반영
       </span>
       {loading ? (
         <div className="text-sm text-slate-500 p-6">불러오는 중...</div>
