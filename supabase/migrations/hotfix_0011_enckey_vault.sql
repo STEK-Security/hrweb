@@ -1,8 +1,8 @@
 -- hotfix_0011_enckey_vault.sql
--- 이 파일 하나만 Studio SQL 편집기에 붙여 실행하면 아래 2가지가 한 번에 반영된다:
+-- 이 파일 하나만 Studio SQL 편집기에 붙여 실행하면 아래가 한 번에 반영된다:
 --
 -- 1) 암호화 키를 GUC(`current_setting('app.enc_key')`)가 아니라 Supabase Vault
---    (`vault.decrypted_secrets`)에서 읽도록 3개 함수를 교체한다. `alter role authenticator
+--    (`vault.decrypted_secrets`)에서 읽도록 4개 함수를 교체한다. `alter role authenticator
 --    set app.enc_key=...` 는 Supabase 의 postgres 롤이 슈퍼유저가 아니라서
 --    `42501 permission denied to set parameter` 로 실패하기 때문.
 -- 2) 민감정보 표시정책 변경(사용자 지시):
@@ -12,6 +12,11 @@
 --    - 주민번호/주소/비상연락망: 마스킹 정책 그대로 유지. 주민번호 원본은 기존
 --      `get_ssn_full` 로도 되고, `reveal_sensitive_field(emp,'ssn')` 로도 된다(하위호환으로
 --      get_ssn_full 은 남겨둠 — 신규 개발은 reveal_sensitive_field 로 통일 권장).
+-- 3) [배포 후 실 진단] `42883 function pgp_sym_decrypt(bytea, text) does not exist` 수정 —
+--    Supabase 는 pgcrypto 를 `extensions` 스키마에 설치하는데 함수들이 `search_path=public`
+--    만 갖고 있어 못 찾았다. 4개 함수 전부 `set search_path = public, extensions` 로 교체.
+--    (Studio 에서 postgres 세션으로 직접 실행한 seed 는 기본 search_path 에 extensions 가
+--    들어 있어 우연히 성공했던 것 — RPC 는 함수 고정 search_path 를 쓰므로 별도로 필요.)
 --
 -- 실행 전, 아직 키를 Vault 에 등록하지 않았다면 먼저 1회:
 --   select vault.create_secret('<강한 키>', 'app_enc_key');
@@ -25,7 +30,7 @@ create or replace function public.get_sensitive_masked(emp uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 stable
 as $$
 declare
@@ -119,7 +124,7 @@ create or replace function public.set_sensitive(emp uuid, payload jsonb)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
@@ -171,7 +176,7 @@ create or replace function public.get_ssn_full(emp uuid)
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
@@ -205,7 +210,7 @@ create or replace function public.reveal_sensitive_field(emp uuid, field text)
 returns text
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   k text := (select decrypted_secret from vault.decrypted_secrets where name = 'app_enc_key');
