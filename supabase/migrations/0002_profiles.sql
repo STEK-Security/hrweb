@@ -44,7 +44,7 @@ as $$
 begin
   insert into public.profiles (id, email) values (new.id, new.email)
     on conflict (id) do nothing;
-  insert into public.user_roles (user_id, role) values (new.id, '일반')
+  insert into public.user_roles (user_id, role) values (new.id, '사용자')
     on conflict (user_id) do nothing;
   return new;
 end;

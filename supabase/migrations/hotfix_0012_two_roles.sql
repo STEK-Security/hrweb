@@ -1,7 +1,7 @@
 -- hotfix_0012_two_roles.sql
 -- Studio SQL 편집기에 이 파일 전체를 그대로 복붙해 실행하면 된다. 모든 문장이
 -- IF EXISTS/재정의 기반이라 재실행해도 안전하다(0005 계열 hotfix 와 동일한 방식).
--- 내용은 0012_two_roles.sql 과 동일.
+-- 내용은 0012_two_roles.sql + handle_new_user() 버그 수정(아래 7번, 0002 원본도 함께 고쳤다).
 --
 -- 0012_two_roles.sql
 -- 2역할 마이그레이션: user_roles.role 을 ('사용자','관리자') 로 단순화.
@@ -55,3 +55,21 @@ drop policy if exists "team_managers self read" on public.team_managers;
 drop table if exists public.team_managers;
 
 -- roles self read 는 유지(본인 role 조회 필요) — 변경 없음.
+
+-- 7) [버그 수정] handle_new_user() 가 여전히 role='일반' 으로 신규 계정을 만들고 있었다.
+--    위 3)에서 CHECK 제약을 ('사용자','관리자') 로 바꿔놨기 때문에, 이 함수를 그대로 두면
+--    신규 계정 가입(auth.users insert) 이 CHECK 위반으로 전부 실패한다. role='사용자' 로 교체.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email) values (new.id, new.email)
+    on conflict (id) do nothing;
+  insert into public.user_roles (user_id, role) values (new.id, '사용자')
+    on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
