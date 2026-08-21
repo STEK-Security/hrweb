@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Users, UserPlus, Pencil, Trash2 } from 'lucide-react';
-import { listEmployees, softDeleteEmployee, type Employee } from '../../lib/db';
+import { listEmployees, softDeleteEmployee, getOrgSetting, type Employee } from '../../lib/db';
 import { isRealOrg } from '../../excel/derive';
 import { useRole } from '../../lib/auth';
 import { logEvent } from '../../lib/audit';
@@ -51,6 +51,11 @@ export function RosterPage() {
   const [status, setStatus] = useState<StatusFilter>('전체');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formEmployeeId, setFormEmployeeId] = useState<string | null | 'new'>(null);
+  const [inputEnabled, setInputEnabled] = useState(true);
+
+  useEffect(() => {
+    getOrgSetting('employee_input_enabled').then(setInputEnabled);
+  }, []);
 
   const reload = () => {
     setLoading(true);
@@ -133,7 +138,7 @@ export function RosterPage() {
           <span className="text-xs text-slate-500">
             조회 {filtered.length}명 / 전체 {employees.length}명
           </span>
-          {isHr && (
+          {isHr && inputEnabled && (
             <button
               type="button"
               onClick={() => setFormEmployeeId('new')}

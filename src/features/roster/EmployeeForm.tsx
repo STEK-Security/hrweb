@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { getEmployee, createEmployee, updateEmployee, setSensitive } from '../../lib/db';
+import { getEmployee, createEmployee, updateEmployee, setSensitive, softDeleteEmployee } from '../../lib/db';
 import { logEvent } from '../../lib/audit';
 import { today } from '../../excel/derive';
 import { FIELD_GROUPS } from './EmployeeDrawer';
@@ -194,7 +194,11 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
       const sensitiveKeyCount = Object.keys(sensitivePayload).length;
       if (sensitiveKeyCount > 0 && id) {
         const ok = await setSensitive(id, sensitivePayload);
-        if (!ok) throw new Error('민감정보 저장에 실패했습니다.');
+        if (!ok) {
+          // 신규 등록 중 실패면 방금 만든 employees 행을 정리해 고아행을 남기지 않는다.
+          if (!isEdit) await softDeleteEmployee(id);
+          throw new Error('민감정보 저장에 실패했습니다.');
+        }
       }
 
       const changedFields =
