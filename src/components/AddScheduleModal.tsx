@@ -13,9 +13,10 @@ export const AddScheduleModal: React.FC<AddScheduleModalProps> = ({
   onClose,
   onAddEvent,
 }) => {
+  const todayStr = new Date().toISOString().slice(0, 10);
   const [title, setTitle] = useState('');
-  const [startDate, setStartDate] = useState('2026-08-22');
-  const [endDate, setEndDate] = useState('2026-08-22');
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
   const [category, setCategory] = useState<CalendarEventItem['category']>('전사HR');
   const [location, setLocation] = useState<'서울' | '천안'>('서울');
   const [description, setDescription] = useState('');
