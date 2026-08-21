@@ -4,7 +4,15 @@
  */
 import { useEffect, useState } from 'react';
 import { LeaveManagement } from '../../components/LeaveManagement';
-import { listLeave, updateLeave, getOrgSetting, type LeaveRecord } from '../../lib/db';
+import {
+  listLeave,
+  updateLeave,
+  getOrgSetting,
+  listConsultLogs,
+  addConsultLog,
+  type LeaveRecord,
+  type ConsultLog,
+} from '../../lib/db';
 import { logEvent } from '../../lib/audit';
 import { dday } from '../../excel/derive';
 import type { LeavePersonItem } from '../../types';
@@ -46,6 +54,7 @@ export function LeavePage() {
   const [loading, setLoading] = useState(true);
   const [formRecord, setFormRecord] = useState<LeaveRecord | 'new' | null>(null);
   const [inputEnabled, setInputEnabled] = useState(true);
+  const [consultLogs, setConsultLogs] = useState<ConsultLog[]>([]);
 
   const reload = () => {
     setLoading(true);
@@ -68,6 +77,28 @@ export function LeavePage() {
     }
   };
 
+  const handleSaveSubstitute = async (leaveId: string, name: string): Promise<boolean> => {
+    const ok = await updateLeave(leaveId, { substitute_assigned: true, substitute_name: name });
+    if (ok) {
+      await logEvent('update_leave', { targetId: leaveId, targetTable: 'leave_records', meta: { field: 'substitute' } });
+      reload();
+    }
+    return ok;
+  };
+
+  const handleSaveConsult = async (leaveId: string, note: string): Promise<boolean> => {
+    const id = await addConsultLog(leaveId, note);
+    if (id) {
+      await logEvent('update_leave', { targetId: leaveId, targetTable: 'leave_records', meta: { field: 'consult' } });
+      setConsultLogs(await listConsultLogs(leaveId));
+    }
+    return id != null;
+  };
+
+  const handleOpenConsult = async (leaveId: string) => {
+    setConsultLogs(await listConsultLogs(leaveId));
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center py-24 text-sm text-slate-500">불러오는 중...</div>;
   }
@@ -81,6 +112,10 @@ export function LeavePage() {
         leavePersons={leavePersons}
         onUpdateLeaveStatus={handleUpdateLeaveStatus}
         onRegisterNew={inputEnabled ? () => setFormRecord('new') : undefined}
+        onSaveSubstitute={handleSaveSubstitute}
+        onSaveConsult={handleSaveConsult}
+        onOpenConsult={handleOpenConsult}
+        consultLogs={consultLogs}
       />
 
       {formRecord && (

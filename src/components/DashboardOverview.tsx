@@ -527,7 +527,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 <span className="text-xs text-slate-500 font-medium">명</span>
               </div>
               <div className="mt-2 flex items-center text-[10px] text-slate-400 font-normal">
-                데모 값 (엑셀에 휴직 컬럼 없음)
+                실시간 휴직 현황
               </div>
             </div>
           </div>
