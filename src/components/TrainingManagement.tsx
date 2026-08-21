@@ -58,7 +58,32 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
   // Overall Statistics
   const totalTargetEmployees = courses.reduce((acc, c) => acc + c.targetCount, 0);
   const totalCompletedEmployees = courses.reduce((acc, c) => acc + c.completedCount, 0);
-  const overallCompletionRate = ((totalCompletedEmployees / totalTargetEmployees) * 100).toFixed(1);
+  const overallCompletionRate =
+    totalTargetEmployees === 0 ? '0.0' : ((totalCompletedEmployees / totalTargetEmployees) * 100).toFixed(1);
+
+  // 법정의무교육 / 신규입사자OJT 이수율 — 데모 상수 대신 courses(props) 기준으로 계산
+  const mandatoryCourses = courses.filter((c) => c.category === '법정의무교육');
+  const mandatoryTarget = mandatoryCourses.reduce((acc, c) => acc + c.targetCount, 0);
+  const mandatoryCompleted = mandatoryCourses.reduce((acc, c) => acc + c.completedCount, 0);
+  const mandatoryRate = mandatoryTarget === 0 ? '0.0' : ((mandatoryCompleted / mandatoryTarget) * 100).toFixed(1);
+
+  const ojtCourses = courses.filter((c) => c.category === '신규입사자OJT');
+  const ojtTarget = ojtCourses.reduce((acc, c) => acc + c.targetCount, 0);
+  const ojtCompleted = ojtCourses.reduce((acc, c) => acc + c.completedCount, 0);
+  const ojtRate = ojtTarget === 0 ? '0.0' : ((ojtCompleted / ojtTarget) * 100).toFixed(1);
+
+  // 집중 독려 대상(미수료) — records(props) 기준, 부서별 인원 상위 순 요약
+  const uncompletedParticipants = participants.filter((p) => p.status === '미수료');
+  const uncompletedByDept = Array.from(
+    uncompletedParticipants
+      .reduce((m, p) => m.set(p.department, (m.get(p.department) ?? 0) + 1), new Map<string, number>())
+      .entries()
+  ).sort((a, b) => b[1] - a[1]);
+  const uncompletedSummary =
+    uncompletedByDept.length === 0
+      ? '미수료 대상자가 없습니다.'
+      : uncompletedByDept.slice(0, 2).map(([dept, n]) => `${dept} ${n}명`).join(', ') +
+        (uncompletedByDept.length > 2 ? ' 등' : '');
 
   const chartData = [
     { name: '수료 완료', value: totalCompletedEmployees, color: '#10b981' },
@@ -192,11 +217,11 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
               <BookOpen className="w-4 h-4 text-blue-600" />
             </div>
             <div className="my-2">
-              <span className="text-3xl font-black text-blue-600">94.8%</span>
-              <p className="text-xs text-slate-500 mt-1">마감 기한: 2026.08.31 (D-13일)</p>
+              <span className="text-3xl font-black text-blue-600">{mandatoryRate}%</span>
+              <p className="text-xs text-slate-500 mt-1">대상 {mandatoryTarget}명 중 {mandatoryCompleted}명 수료</p>
             </div>
             <div className="bg-blue-50 p-2 rounded-lg text-[11px] text-blue-800 font-semibold">
-              과태료 대상 무결점 달성 진행 중
+              법정의무교육 {mandatoryCourses.length}개 과정 진행 중
             </div>
           </div>
 
@@ -206,11 +231,11 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
               <Users className="w-4 h-4 text-emerald-600" />
             </div>
             <div className="my-2">
-              <span className="text-3xl font-black text-emerald-600">100.0%</span>
-              <p className="text-xs text-slate-500 mt-1">8월 신규 입사자 28명 전원 수료</p>
+              <span className="text-3xl font-black text-emerald-600">{ojtRate}%</span>
+              <p className="text-xs text-slate-500 mt-1">대상 {ojtTarget}명 중 {ojtCompleted}명 수료</p>
             </div>
             <div className="bg-emerald-50 p-2 rounded-lg text-[11px] text-emerald-800 font-semibold">
-              기초 직무 멘토링 매칭 완료
+              신규입사자 OJT {ojtCourses.length}개 과정 진행 중
             </div>
           </div>
 
@@ -220,8 +245,8 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
               <AlertTriangle className="w-4 h-4 text-rose-600" />
             </div>
             <div className="my-2">
-              <span className="text-3xl font-black text-rose-600">42명</span>
-              <p className="text-xs text-slate-500 mt-1">영업직 18명, 생산2팀 14명 등</p>
+              <span className="text-3xl font-black text-rose-600">{uncompletedParticipants.length}명</span>
+              <p className="text-xs text-slate-500 mt-1">{uncompletedSummary}</p>
             </div>
             <div className="bg-rose-50 p-2 rounded-lg text-[11px] text-rose-800 font-semibold">
               사내 모바일 러닝 앱 링크 재전송

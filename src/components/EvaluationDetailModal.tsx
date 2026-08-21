@@ -20,11 +20,15 @@ export const EvaluationDetailModal: React.FC<EvaluationDetailModalProps> = ({
 }) => {
   if (!isOpen || !item) return null;
 
-  const [selectedGrade, setSelectedGrade] = useState<'S' | 'A' | 'B' | 'C' | 'D'>(item.finalGrade || 'A');
+  const [selectedGrade, setSelectedGrade] = useState<'S' | 'A' | 'B' | 'C' | 'D' | undefined>(item.finalGrade);
   const [feedback, setFeedback] = useState(item.feedbackSummary || '');
   const [managerScore, setManagerScore] = useState<number>(item.managerScore || 90);
 
   const handleSave = (newStatus: '완료' | '진행중') => {
+    if (newStatus === '완료' && !selectedGrade) {
+      window.alert('완료 처리하려면 등급을 선택해야 합니다.');
+      return;
+    }
     onUpdateStatus(item.id, newStatus, selectedGrade, feedback);
     onClose();
   };
@@ -65,7 +69,10 @@ export const EvaluationDetailModal: React.FC<EvaluationDetailModalProps> = ({
             </div>
             <div>
               <span className="text-[11px] text-slate-500 block">1차 평가자</span>
-              <span className="text-xs font-semibold text-slate-800">{item.evaluatorName} ({item.evaluatorPosition})</span>
+              <span className="text-xs font-semibold text-slate-800">
+                {item.evaluatorName}
+                {item.evaluatorPosition && ` (${item.evaluatorPosition})`}
+              </span>
             </div>
             <div>
               <span className="text-[11px] text-slate-500 block">마감 기한</span>
