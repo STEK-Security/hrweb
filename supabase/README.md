@@ -125,6 +125,20 @@ Studio SQL 편집기에서 **`supabase/migrations/APPLY_EXPANSION.sql`** 하나�
 `0001~0010` 다음에 `0012_two_roles.sql` 을 적용하면 된다(0002 원본이 이미 `role='사용자'` 로
 고쳐져 있어 별도 트리거 수정이 필요 없다).
 
+## 3-2. 확장분 2차 적용(0015~0019) — 권장
+
+`APPLY_EXPANSION.sql`(0011~0014)까지 적용된 배포 DB 라면, Studio SQL 편집기에서
+**`supabase/migrations/APPLY_EXPANSION_2.sql`** 하나만 그대로 복붙해 실행하면
+0015~0019(증명서 발급 감사액션, 인사발령이력, HR캘린더, 교육관리, 평가관리 신규 테이블+RLS)가
+전부 순서대로 반영된다(재실행해도 안전). 개별 `0015~0019_*.sql`/`hotfix_0015~0019_*.sql` 파일도
+그대로 남아있다.
+
+신규 테이블 4개(`employee_transfers`, `hr_events`/`hr_checklists`, `training_courses`/
+`training_records`, `evaluations`) 모두 `enable+force row level security` 후 anon/authenticated
+전체 revoke, `is_hr()`(사용자·관리자 전원) 만 전체 CRUD 허용 정책 하나씩만 붙어 있다 — 별도
+관리자 전용 제한은 없다(설정류가 아니라 인사 업무 데이터라 employees/leave_records 와 동일한
+권한 모델). `created_by` 는 `default auth.uid()` 로 앱이 별도로 채우지 않아도 된다.
+
 ## 4. 검증
 
 적용 후 `supabase/tests/verify.sql` 의 각 쿼리를 Studio SQL 편집기에서 실행한다.

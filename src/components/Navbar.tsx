@@ -3,15 +3,21 @@ import { ActiveMenu } from '../types';
 import {
   LayoutDashboard,
   Users,
-  DollarSign,
+  Users2,
+  Building2,
   UserCheck,
   Calendar,
-  GraduationCap,
-  Award,
   FileSpreadsheet,
+  FileCheck2,
+  ClipboardCheck,
   LogOut,
   ShieldAlert,
+  ArrowLeftRight,
+  GraduationCap,
+  Award,
+  Wallet,
 } from 'lucide-react';
+import { GlobalSearch } from './GlobalSearch';
 
 interface NavbarProps {
   activeMenu: ActiveMenu;
@@ -30,6 +36,8 @@ interface NavbarProps {
   sbStatus?: 'checking' | 'ok' | 'down' | 'off';
   /** 관리자만 "감사로그" 메뉴 노출 */
   isAdmin?: boolean;
+  /** 전역검색에서 직원을 선택했을 때(EmployeeDrawer 오픈) */
+  onSelectEmployee?: (id: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -44,6 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDataSource,
   sbStatus,
   isAdmin,
+  onSelectEmployee,
 }) => {
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
@@ -62,14 +71,29 @@ export const Navbar: React.FC<NavbarProps> = ({
       icon: <Users className="w-4 h-4" />,
     },
     {
+      id: '직원명부',
+      label: '직원 명부',
+      icon: <FileSpreadsheet className="w-4 h-4" />,
+    },
+    {
+      id: '발령이력',
+      label: '발령 이력',
+      icon: <ArrowLeftRight className="w-4 h-4" />,
+    },
+    {
+      id: '구성다양성',
+      label: '구성·다양성',
+      icon: <Users2 className="w-4 h-4" />,
+    },
+    {
+      id: '조직도',
+      label: '조직도',
+      icon: <Building2 className="w-4 h-4" />,
+    },
+    {
       id: '휴직자관리',
       label: '휴직자 관리',
       icon: <UserCheck className="w-4 h-4" />,
-    },
-    {
-      id: '인건비',
-      label: '인건비',
-      icon: <DollarSign className="w-4 h-4" />,
     },
     {
       id: '교육관리',
@@ -80,6 +104,21 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: '평가관리',
       label: '평가 관리',
       icon: <Award className="w-4 h-4" />,
+    },
+    {
+      id: '인건비',
+      label: '인건비',
+      icon: <Wallet className="w-4 h-4" />,
+    },
+    {
+      id: '데이터품질',
+      label: '데이터품질',
+      icon: <ClipboardCheck className="w-4 h-4" />,
+    },
+    {
+      id: '증명서',
+      label: '증명서 발급',
+      icon: <FileCheck2 className="w-4 h-4" />,
     },
     ...(isAdmin
       ? [
@@ -110,6 +149,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 전역검색 */}
+          {onSelectEmployee && (
+            <div className="hidden md:block flex-1 max-w-xs mx-4">
+              <GlobalSearch onSelectEmployee={onSelectEmployee} />
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             {/* supabase 연결 상태 */}
