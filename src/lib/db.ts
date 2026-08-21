@@ -53,10 +53,10 @@ export interface ProfileLite {
   name: string | null;
 }
 
-/** employees 전체 조회 → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
+/** employees 전체 조회(soft delete 된 행 제외) → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.from('employees').select('*');
+  const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
   if (error || !data) return [];
   return deriveAll(data as RawRow[]);
 }
@@ -67,6 +67,13 @@ export async function getEmployee(id: string): Promise<Employee | null> {
   const { data, error } = await supabase.from('employees').select('*').eq('id', id).single();
   if (error || !data) return null;
   return derive(data as RawRow, 0);
+}
+
+/** soft delete: deleted_at 만 채운다(물리 삭제 없음). */
+export async function softDeleteEmployee(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employees').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  return !error;
 }
 
 /** 휴직 기록 전체 조회. */
