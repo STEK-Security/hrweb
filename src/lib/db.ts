@@ -69,10 +69,37 @@ export async function getEmployee(id: string): Promise<Employee | null> {
   return derive(data as RawRow, 0);
 }
 
+/** 비민감 필드 신규 등록. 성공 시 새 employees.id, 실패 시 null. */
+export async function createEmployee(
+  fields: Record<string, string | number | null>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('employees').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+/** 비민감 필드 수정. */
+export async function updateEmployee(
+  id: string,
+  fields: Record<string, string | number | null>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employees').update(fields).eq('id', id);
+  return !error;
+}
+
 /** soft delete: deleted_at 만 채운다(물리 삭제 없음). */
 export async function softDeleteEmployee(id: string): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.from('employees').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  return !error;
+}
+
+/** 민감값 등록/수정(변경된 키만 payload에 포함, set_sensitive RPC). */
+export async function setSensitive(empId: string, payload: Record<string, unknown>): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.rpc('set_sensitive', { emp: empId, payload });
   return !error;
 }
 

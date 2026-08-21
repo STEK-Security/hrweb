@@ -3,10 +3,13 @@
  * 표에 표시하지 않는다(RLS 도 별도로 막지만 화면에서도 노출하지 않음). 행 클릭 → 상세 드로어.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Users } from 'lucide-react';
-import { listEmployees, type Employee } from '../../lib/db';
+import { Search, Users, UserPlus, Pencil, Trash2 } from 'lucide-react';
+import { listEmployees, softDeleteEmployee, type Employee } from '../../lib/db';
 import { isRealOrg } from '../../excel/derive';
-import { EmployeeDrawer } from './EmployeeDrawer';
+import { useRole } from '../../lib/auth';
+import { logEvent } from '../../lib/audit';
+import { EmployeeDrawer, HR_ROLES } from './EmployeeDrawer';
+import { EmployeeForm } from './EmployeeForm';
 
 type StatusFilter = '전체' | '재직중' | '퇴직예정' | '퇴직';
 
@@ -34,6 +37,9 @@ function StatusBadge({ status }: { status: '재직중' | '퇴직예정' | '퇴�
 }
 
 export function RosterPage() {
+  const role = useRole();
+  const isHr = !!role && HR_ROLES.has(role);
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -44,6 +50,15 @@ export function RosterPage() {
   const [empType, setEmpType] = useState('전체');
   const [status, setStatus] = useState<StatusFilter>('전체');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [formEmployeeId, setFormEmployeeId] = useState<string | null | 'new'>(null);
+
+  const reload = () => {
+    setLoading(true);
+    listEmployees().then((data) => {
+      setEmployees(data);
+      setLoading(false);
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +71,18 @@ export function RosterPage() {
       cancelled = true;
     };
   }, []);
+
+  const handleDelete = async (e: Employee) => {
+    if (!window.confirm(`${e._name}(${e._id}) 직원을 삭제하시겠습니까?`)) return;
+    const id = e['id'] as string;
+    const ok = await softDeleteEmployee(id);
+    if (!ok) {
+      window.alert('삭제에 실패했습니다.');
+      return;
+    }
+    await logEvent('delete_employee', { targetId: id, targetTable: 'employees' });
+    reload();
+  };
 
   const corps = useMemo(() => uniqueSorted(employees.map((e) => e._corp)), [employees]);
   const divs = useMemo(() => uniqueSorted(employees.map((e) => e._div)), [employees]);
@@ -102,9 +129,21 @@ export function RosterPage() {
           <Users className="w-5 h-5 text-blue-600" />
           직원 명부
         </h2>
-        <span className="text-xs text-slate-500">
-          조회 {filtered.length}명 / 전체 {employees.length}명
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500">
+            조회 {filtered.length}명 / 전체 {employees.length}명
+          </span>
+          {isHr && (
+            <button
+              type="button"
+              onClick={() => setFormEmployeeId('new')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              직원 추가
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
@@ -157,18 +196,19 @@ export function RosterPage() {
                 <th className="px-3 py-2.5">나이</th>
                 <th className="px-3 py-2.5">성별</th>
                 <th className="px-3 py-2.5">상태</th>
+                {isHr && <th className="px-3 py-2.5">관리</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={15} className="px-3 py-8 text-center text-slate-400">
                     불러오는 중...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={15} className="px-3 py-8 text-center text-slate-400">
                     조회 결과가 없습니다.
                   </td>
                 </tr>
@@ -195,6 +235,34 @@ export function RosterPage() {
                     <td className="px-3 py-2.5">
                       <StatusBadge status={statusOf(e)} />
                     </td>
+                    {isHr && (
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setFormEmployeeId(e['id'] as string);
+                            }}
+                            aria-label="수정"
+                            className="p-1 rounded text-blue-600 hover:bg-blue-50"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              void handleDelete(e);
+                            }}
+                            aria-label="삭제"
+                            className="p-1 rounded text-rose-600 hover:bg-rose-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -203,7 +271,25 @@ export function RosterPage() {
         </div>
       </div>
 
-      <EmployeeDrawer employeeId={selectedId} onClose={() => setSelectedId(null)} />
+      <EmployeeDrawer
+        employeeId={selectedId}
+        onClose={() => setSelectedId(null)}
+        onEdit={(id) => {
+          setSelectedId(null);
+          setFormEmployeeId(id);
+        }}
+      />
+
+      {formEmployeeId && (
+        <EmployeeForm
+          employeeId={formEmployeeId === 'new' ? null : formEmployeeId}
+          onClose={() => setFormEmployeeId(null)}
+          onSaved={() => {
+            setFormEmployeeId(null);
+            reload();
+          }}
+        />
+      )}
     </div>
   );
 }
