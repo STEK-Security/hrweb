@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth, signOut } from './lib/auth';
+import { logEvent } from './lib/audit';
 import { LoginPage } from './features/auth/LoginPage';
 import { Navbar } from './components/Navbar';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -9,6 +10,11 @@ import type { ActiveMenu } from './types';
 export default function App() {
   const { session, user, role, roleError, loading } = useAuth();
   const [activeMenu, setActiveMenu] = useState<ActiveMenu>('대시보드');
+
+  const handleSelectMenu = (menu: ActiveMenu) => {
+    setActiveMenu(menu);
+    logEvent('view_screen', { meta: { screen: menu } });
+  };
 
   if (loading) {
     return (
@@ -49,7 +55,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
       <Navbar
         activeMenu={activeMenu}
-        onSelectMenu={setActiveMenu}
+        onSelectMenu={handleSelectMenu}
         user={{ name: displayName, dept: '', role: role ?? '일반' }}
         onLogout={signOut}
       />

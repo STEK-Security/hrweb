@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './supabase';
+import { logEvent } from './audit';
 
 export type Role = '시스템관리자' | '인사담당자' | '팀장' | '일반';
 
@@ -16,16 +17,20 @@ export async function signIn(email: string, password: string): Promise<Session> 
   }
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
+    await logEvent('login_fail', { meta: { email } });
     throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
   }
   if (!data.session) {
+    await logEvent('login_fail', { meta: { email } });
     throw new Error('로그인에 실패했습니다. 다시 시도해주세요.');
   }
+  await logEvent('login_success', { meta: { email } });
   return data.session;
 }
 
 export async function signOut(): Promise<void> {
   if (!supabase) return;
+  await logEvent('logout');
   await supabase.auth.signOut();
 }
 

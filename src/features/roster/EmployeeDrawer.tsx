@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { X, ShieldAlert, Eye, Loader2 } from 'lucide-react';
 import { getEmployee, getSensitiveMasked, revealField, type Employee } from '../../lib/db';
 import { useRole } from '../../lib/auth';
+import { logEvent } from '../../lib/audit';
 
 interface EmployeeDrawerProps {
   employeeId: string | null;
@@ -120,6 +121,7 @@ export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
     setLoading(true);
     setMasked(null);
     setRevealed({});
+    logEvent('view_employee', { targetId: employeeId, targetTable: 'employees' });
     getEmployee(employeeId).then((e) => {
       if (!cancelled) {
         setEmployee(e);
@@ -147,6 +149,7 @@ export function EmployeeDrawer({ employeeId, onClose }: EmployeeDrawerProps) {
     const value = await revealField(employeeId, field);
     setRevealed((r) => ({ ...r, [field]: value }));
     setRevealing((r) => ({ ...r, [field]: false }));
+    logEvent('reveal', { targetId: employeeId, targetTable: 'employee_sensitive', meta: { field } });
   };
 
   const parseAcct = (raw: string | null): MaskedAcct => {
