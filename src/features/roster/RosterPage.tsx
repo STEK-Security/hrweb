@@ -176,7 +176,7 @@ export function RosterPage() {
                 filtered.map((e) => (
                   <tr
                     key={e._id}
-                    onClick={() => setSelectedId(e._id)}
+                    onClick={() => setSelectedId(e['id'] as string)}
                     className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                   >
                     <td className="px-3 py-2.5 font-mono">{e._id}</td>
