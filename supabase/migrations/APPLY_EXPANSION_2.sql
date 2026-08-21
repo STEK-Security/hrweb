@@ -1,6 +1,6 @@
 -- APPLY_EXPANSION_2.sql
 -- 전제: APPLY_ALL.sql(0001~0010) + APPLY_EXPANSION.sql(0011~0014) 이 이미 적용되어 있다.
--- 이 파일은 그 이후 확장분(0015~0021, 관리자·보안 포함) 전체를 한 번에 반영한다 — Studio SQL
+-- 이 파일은 그 이후 확장분(0015~0022, 관리자·보안 포함) 전체를 한 번에 반영한다 — Studio SQL
 -- 편집기에 이 파일 전체를 그대로 복붙해 실행하면 된다.
 --
 -- 모든 문장이 IF EXISTS/IF NOT EXISTS/CREATE OR REPLACE 기반이라 재실행해도 안전하다.
@@ -13,8 +13,10 @@
 --   (f) 0020: 관리자 화면(계정·역할관리, 조직설정) 지원 — 컬럼 grant 확장 + log_event 화이트리스트 추가
 --   (g) 0021: 보안하드닝 — 비활성계정 서버측차단(P0), enabled 자기수정방지(P0),
 --             audit 직접insert 회수(P1), 마지막관리자/본인역할 서버측차단(P2)(최종본)
+--   (h) 0022: log_event IP 취득을 x-client-ip(nginx real_ip 복원) 우선으로 변경(도커 대역
+--             중간홉의 XFF 재작성 대응, 최종본)
 --
--- 개별 0015~0021/hotfix_0015~0020 파일은 그대로 남아있다(파일 단위로 하나씩 적용하고 싶을 때 사용).
+-- 개별 0015~0022/hotfix_0015~0020 파일은 그대로 남아있다(파일 단위로 하나씩 적용하고 싶을 때 사용).
 
 -- ============================================================
 -- (0015_certificate_audit)
@@ -655,3 +657,82 @@ drop trigger if exists user_roles_guard on public.user_roles;
 create trigger user_roles_guard before update on public.user_roles
   for each row execute function public.guard_admin_roles();
 
+
+-- ============================================================
+-- (0022_log_event_ip)
+-- ============================================================
+
+-- 0022_log_event_ip.sql : log_event IP 취득을 x-client-ip(nginx real_ip 복원 후 커스텀 헤더) 우선으로 변경.
+-- 나머지(action 화이트리스트는 0020 최종본 기준, anon 제한, UA, insert, owner, grant/revoke)는 동일 유지.
+create or replace function public.log_event(
+  p_action text,
+  p_target_id uuid default null,
+  p_target_table text default null,
+  p_meta jsonb default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_headers jsonb;
+  v_ip inet;
+  v_ua text;
+  v_actor_email text;
+begin
+  if p_action not in (
+    'login_success','login_fail','logout','view_screen','view_employee',
+    'create_employee','update_employee','delete_employee',
+    'create_leave','update_leave','export','reveal','read_ssn_full','role_change',
+    'issue_certificate',
+    'create_transfer','update_transfer','delete_transfer',
+    'create_event','update_event','delete_event',
+    'create_checklist','update_checklist','delete_checklist',
+    'create_training_course','update_training_course','delete_training_course',
+    'create_training_record','update_training_record','delete_training_record',
+    'create_evaluation','update_evaluation','delete_evaluation',
+    'toggle_account','update_settings'
+  ) then
+    raise exception 'invalid action';
+  end if;
+
+  -- anon(비로그인) 컨텍스트는 로그인 성공/실패 기록만 허용.
+  if v_actor is null and p_action not in ('login_success','login_fail') then
+    raise exception 'forbidden';
+  end if;
+
+  begin
+    v_headers := current_setting('request.headers', true)::jsonb;
+  exception when others then
+    v_headers := null;
+  end;
+
+  if v_headers is not null then
+    v_ua := v_headers ->> 'user-agent';
+    begin
+      v_ip := coalesce(
+        nullif(v_headers ->> 'x-client-ip', ''),
+        split_part(v_headers ->> 'x-forwarded-for', ',', 1)
+      )::inet;
+    exception when others then
+      v_ip := null;
+    end;
+  end if;
+
+  v_actor_email := p_meta ->> 'email';
+
+  insert into public.audit_log
+    (actor, action, target_id, target_table, meta, ip, user_agent, actor_email)
+  values
+    (v_actor, p_action, p_target_id, p_target_table, p_meta, v_ip, v_ua, v_actor_email);
+end;
+$$;
+
+-- audit_log 는 FORCE RLS 대상이라, 이 함수가 anon(actor 없음) 행까지 insert 하려면
+-- 소유자가 RLS 를 우회하는 롤이어야 한다(0011 hotfix 의 민감 RPC 들과 동일한 이유).
+alter function public.log_event(text, uuid, text, jsonb) owner to postgres;
+
+revoke execute on function public.log_event(text, uuid, text, jsonb) from public;
+grant execute on function public.log_event(text, uuid, text, jsonb) to authenticated, anon;
