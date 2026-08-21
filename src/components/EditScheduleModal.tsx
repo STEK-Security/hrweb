@@ -21,7 +21,7 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [category, setCategory] = useState<CalendarEventItem['category']>('전사HR');
-  const [location, setLocation] = useState<'서울' | '천안'>('서울');
+  const [location, setLocation] = useState<string>('서울');
   const [description, setDescription] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -33,7 +33,7 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
       setStartDate(start);
       setEndDate(end);
       setCategory(event.category || '전사HR');
-      setLocation((event.location as '서울' | '천안') || '서울');
+      setLocation(event.location || '서울');
       setDescription(event.description || '');
       setShowDeleteConfirm(false);
     }
@@ -166,11 +166,14 @@ export const EditScheduleModal: React.FC<EditScheduleModalProps> = ({
                   id="edit-schedule-location"
                   required
                   value={location}
-                  onChange={(e) => setLocation(e.target.value as '서울' | '천안')}
+                  onChange={(e) => setLocation(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 font-medium"
                 >
                   <option value="서울">서울</option>
                   <option value="천안">천안</option>
+                  {location !== '서울' && location !== '천안' && (
+                    <option value={location}>{location}</option>
+                  )}
                 </select>
               </div>
             </div>

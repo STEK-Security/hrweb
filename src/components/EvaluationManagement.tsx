@@ -245,7 +245,8 @@ export const EvaluationManagement: React.FC<EvaluationManagementProps> = ({
                     </span>
                   </td>
                   <td className="px-3.5 py-3 text-slate-700">
-                    {item.evaluatorName} ({item.evaluatorPosition})
+                    {item.evaluatorName}
+                    {item.evaluatorPosition && ` (${item.evaluatorPosition})`}
                   </td>
                   <td className="px-3.5 py-3 text-center">
                     <span

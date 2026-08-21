@@ -28,6 +28,9 @@ interface LeaveManagementProps {
   onRegisterNew?: () => void;
 }
 
+/** 복직예정일이 없으면 dday()가 999 센티넬을 반환한다(LeavePage.toPerson) — 그 경우 '-'로 표기. */
+const formatDDay = (dDay: number): string => (dDay >= 999 ? '-' : `D-${dDay}일`);
+
 export const LeaveManagement: React.FC<LeaveManagementProps> = ({
   leavePersons,
   onUpdateLeaveStatus,
@@ -92,10 +95,8 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
 
   const handleSaveSubstitute = () => {
     if (!selectedPersonForModal) return;
-    selectedPersonForModal.substituteAssigned = true;
-    selectedPersonForModal.substituteName = substituteInput || '인사배치 완료';
     setShowAssignSubstituteModal(false);
-    setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${substituteInput || '배치완료'})이 성공적으로 매칭되었습니다.`);
+    setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${substituteInput || '배치완료'})이 임시 표시(미저장)되었습니다.`);
     setTimeout(() => setNotificationMsg(null), 4000);
   };
 
@@ -107,7 +108,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
 
   const handleSaveConsult = () => {
     setShowConsultLogModal(false);
-    setNotificationMsg(`[${selectedPersonForModal?.name}] 사전 복직 상담 일지가 저장되었습니다.`);
+    setNotificationMsg(`[${selectedPersonForModal?.name}] 사전 복직 상담 일지가 임시 표시(미저장)되었습니다.`);
     setTimeout(() => setNotificationMsg(null), 4000);
   };
 
@@ -373,7 +374,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700">
-                              D-{person.dDay}일
+                              {formatDDay(person.dDay)}
                             </span>
                           )}
                         </td>
@@ -450,7 +451,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900">{p.name} {p.position}</span>
-                    <span className="font-black text-rose-600 text-xs">D-{p.dDay}일</span>
+                    <span className="font-black text-rose-600 text-xs">{formatDDay(p.dDay)}</span>
                   </div>
                   <p className="text-[11px] text-slate-600">
                     소속: <strong className="text-slate-800">{p.department}</strong> | 사유: {p.reason}
@@ -585,7 +586,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
                   대상자: {selectedPersonForModal.name} {selectedPersonForModal.position} ({selectedPersonForModal.department})
                 </p>
                 <p className="text-[11px] text-blue-700 mt-0.5">
-                  복직 예정일: {selectedPersonForModal.expectedReturnDate} (D-{selectedPersonForModal.dDay}일)
+                  복직 예정일: {selectedPersonForModal.expectedReturnDate} ({formatDDay(selectedPersonForModal.dDay)})
                 </p>
               </div>
 
