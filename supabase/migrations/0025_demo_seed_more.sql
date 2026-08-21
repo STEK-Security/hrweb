@@ -1,9 +1,11 @@
 -- 0025_demo_seed_more.sql
 -- DEMO SEED — Supabase Studio(관리자, RLS 우회)에서 직접 실행 전제. 재실행 안전(관련 데모행 delete 선행).
 --
--- payroll_monthly/department_productivity: PayrollAnalysis.tsx 의 기존 initialPayrollData/
--- departmentProductivityData 데모값을 그대로 옮긴다(이 두 테이블은 전량 이 시드로만 채워지므로
--- 재실행 시 전체 delete 후 재insert).
+-- payroll_monthly: PayrollAnalysis.tsx 의 기존 initialPayrollData 데모값을 그대로 옮긴다.
+-- department_productivity: 하드코딩 부서명 대신 employees 의 "전체소속명"(본부 레벨, DashboardPage.tsx
+-- buildDepartmentDistribution 의 _div 와 동일 기준)에서 파생한다. 금액/지표는 실데이터 소스가 없어
+-- headcount 기반 데모 파생식(부서명 해시로 소폭 변주)을 사용한다.
+-- 이 두 테이블은 전량 이 시드로만 채워지므로 재실행 시 전체 delete 후 재insert.
 -- employee_transfers/hr_events: 기존 실데이터가 있을 수 있으므로 note/title 에 '(DEMO)' 마커를
 -- 붙여 해당 마커 행만 선행 delete 한다. employee_id 는 하드코딩하지 않고 public.employees 를
 -- select 로 참조한다(재직중 행 중 무작위).
@@ -36,17 +38,43 @@ values
   ('12월 (예상)', 43.2, 38.9, 26.5, 8.2, 3.6, 2.6, 2.3, 2.9, '연말 특별 인센티브 및 결산 수당', false, 12);
 
 -- ============================================================
--- 2) department_productivity
+-- 2) department_productivity — employees "전체소속명" 본부 레벨 파생(재직자만, 실제 조직 기준)
 -- ============================================================
+with dept_emp as (
+  select
+    case
+      when trim(split_part("전체소속명", '>', 2)) ~ '총괄$' then 'TBS'
+      when trim(split_part("전체소속명", '>', 2)) = '' then '미지정'
+      else trim(split_part("전체소속명", '>', 2))
+    end as department
+  from public.employees
+  where "퇴직일" is null
+),
+dept_agg as (
+  select
+    department,
+    count(*) as headcount,
+    round(count(*) * 0.75, 1) as annual_payroll,
+    -- 부서명 해시로 4.5~7.4 사이 매출배수를 소폭 변주(재실행해도 결과 동일, 데모용)
+    4.5 + (abs(hashtext(department)) % 30) / 10.0 as revenue_multiplier,
+    90 + (abs(hashtext(department || '_kpi')) % 9) as kpi_score
+  from dept_emp
+  where department <> '미지정' and department !~* '테스트|test|gpro'
+  group by department
+)
 insert into public.department_productivity
   (department, headcount, annual_payroll, monthly_payroll_avg, generated_revenue, kpi_score, productivity_per_person, payroll_roi, sort_order)
-values
-  ('연구개발본부', 164, 128.4, 1070, 890.0, 96.4, 5.43, 6.93, 1),
-  ('생산본부', 184, 119.6, 996, 1240.0, 94.8, 6.74, 10.37, 2),
-  ('영업마케팅본부', 112, 89.2, 743, 1420.0, 92.1, 12.68, 15.92, 3),
-  ('물류운영팀', 82, 45.8, 381, 280.0, 95.0, 3.41, 6.11, 4),
-  ('경영지원본부', 64, 42.6, 355, 190.0, 98.2, 2.97, 4.46, 5),
-  ('품질보증팀', 42, 28.4, 236, 210.0, 93.7, 5.00, 7.39, 6);
+select
+  department,
+  headcount,
+  annual_payroll,
+  round(annual_payroll * 100 / 12) as monthly_payroll_avg,
+  round(headcount * revenue_multiplier, 1) as generated_revenue,
+  kpi_score,
+  round(revenue_multiplier, 2) as productivity_per_person,
+  round((headcount * revenue_multiplier) / annual_payroll, 2) as payroll_roi,
+  row_number() over (order by headcount desc) as sort_order
+from dept_agg;
 
 -- ============================================================
 -- 3) employee_transfers — 2026-08~09 발령 데모 9건(승진/전보/부서이동 혼합)
