@@ -17,6 +17,7 @@ import {
   Wallet,
   UserCog,
   Settings,
+  Mail,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 
@@ -115,6 +116,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: '데이터품질',
       label: '데이터품질',
       icon: <ClipboardCheck className="w-4 h-4" />,
+    },
+    {
+      id: '메일발송',
+      label: '메일 발송',
+      icon: <Mail className="w-4 h-4" />,
     },
     ...(isAdmin
       ? [
