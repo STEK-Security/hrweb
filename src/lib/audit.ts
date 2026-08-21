@@ -19,7 +19,8 @@ export type AuditAction =
   | 'export'
   | 'reveal'
   | 'read_ssn_full'
-  | 'role_change';
+  | 'role_change'
+  | 'issue_certificate';
 
 export interface LogEventOptions {
   targetId?: string | null;
