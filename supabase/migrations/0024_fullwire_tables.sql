@@ -29,6 +29,7 @@ alter table public.payroll_monthly force row level security;
 revoke all on public.payroll_monthly from anon, authenticated;
 grant select, insert, update, delete on public.payroll_monthly to authenticated;
 
+drop policy if exists "payroll_monthly hr all" on public.payroll_monthly;
 create policy "payroll_monthly hr all" on public.payroll_monthly
   for all
   using (public.is_hr())
@@ -57,6 +58,7 @@ alter table public.department_productivity force row level security;
 revoke all on public.department_productivity from anon, authenticated;
 grant select, insert, update, delete on public.department_productivity to authenticated;
 
+drop policy if exists "department_productivity hr all" on public.department_productivity;
 create policy "department_productivity hr all" on public.department_productivity
   for all
   using (public.is_hr())
@@ -79,6 +81,7 @@ alter table public.leave_consult_logs force row level security;
 revoke all on public.leave_consult_logs from anon, authenticated;
 grant select, insert, update, delete on public.leave_consult_logs to authenticated;
 
+drop policy if exists "leave_consult_logs hr all" on public.leave_consult_logs;
 create policy "leave_consult_logs hr all" on public.leave_consult_logs
   for all
   using (public.is_hr())
@@ -114,10 +117,12 @@ revoke all on public.mail_queue from anon, authenticated;
 -- authenticated(HR): insert/select만. update/delete 는 주지 않는다(status 는 n8n 이 갱신).
 grant select, insert on public.mail_queue to authenticated;
 
+drop policy if exists "mail_queue hr select" on public.mail_queue;
 create policy "mail_queue hr select" on public.mail_queue
   for select
   using (public.is_hr());
 
+drop policy if exists "mail_queue hr insert" on public.mail_queue;
 create policy "mail_queue hr insert" on public.mail_queue
   for insert
   with check (public.is_hr());
@@ -127,12 +132,14 @@ grant update (status, sent_at) on public.mail_queue to n8n_ingest;
 -- n8n_ingest: 발송 대상 조회를 위해 select 도 필요(본문/수신자를 읽어야 발송 가능).
 grant select (id, to_email, to_name, subject, body, category, status, related_table, related_id, created_at) on public.mail_queue to n8n_ingest;
 
+drop policy if exists "mail_queue n8n update status" on public.mail_queue;
 create policy "mail_queue n8n update status" on public.mail_queue
   for update
   to n8n_ingest
   using (true)
   with check (true);
 
+drop policy if exists "mailq n8n select" on public.mail_queue;
 create policy "mailq n8n select" on public.mail_queue
   for select
   to n8n_ingest
