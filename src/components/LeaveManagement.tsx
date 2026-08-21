@@ -24,11 +24,14 @@ import {
 interface LeaveManagementProps {
   leavePersons: LeavePersonItem[];
   onUpdateLeaveStatus: (id: string, status: LeavePersonItem['status']) => void;
+  /** 휴직자 등록 진입점(선택). 전달되면 헤더 버튼 영역에 등록 버튼이 추가된다. */
+  onRegisterNew?: () => void;
 }
 
 export const LeaveManagement: React.FC<LeaveManagementProps> = ({
   leavePersons,
   onUpdateLeaveStatus,
+  onRegisterNew,
 }) => {
   const [activeTab, setActiveTab] = useState<'전체' | '복직예정' | '육아휴직' | '질병휴직' | '기타'>('전체');
   const [searchTerm, setSearchTerm] = useState('');
@@ -123,6 +126,16 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onRegisterNew && (
+            <button
+              type="button"
+              onClick={onRegisterNew}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>휴직자 등록</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {

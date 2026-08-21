@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { EvaluationItem } from '../types';
+import { EvaluationItem as EvaluationItemBase } from '../types';
 import { X, Award, CheckCircle, Clock, User, Building, FileSpreadsheet, Star } from 'lucide-react';
+
+// DB의 stage는 자유 텍스트이므로 원본 리터럴 유니온을 string으로 완화
+type EvaluationItem = Omit<EvaluationItemBase, 'stage'> & { stage: string };
 
 interface EvaluationDetailModalProps {
   item: EvaluationItem | null;

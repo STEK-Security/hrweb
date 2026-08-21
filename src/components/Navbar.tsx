@@ -8,7 +8,6 @@ import {
   UserCheck,
   Calendar,
   FileSpreadsheet,
-  FileCheck2,
   ClipboardCheck,
   LogOut,
   ShieldAlert,
@@ -116,11 +115,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: '데이터품질',
       label: '데이터품질',
       icon: <ClipboardCheck className="w-4 h-4" />,
-    },
-    {
-      id: '증명서',
-      label: '증명서 발급',
-      icon: <FileCheck2 className="w-4 h-4" />,
     },
     ...(isAdmin
       ? [

@@ -1,9 +1,37 @@
 import React, { useState } from 'react';
 import { PayrollMonthlyData, DepartmentProductivityData } from '../types';
-// TODO(redesign): DB 데이터로 교체 예정
-const initialPayrollData: PayrollMonthlyData[] = [];
-const departmentProductivityData: DepartmentProductivityData[] = [];
-const payrollCostBreakdown: { name: string; value: number; color: string }[] = [];
+// TODO(redesign): DB(n8n) 데이터로 교체 예정 — 현재는 UI/UX 복원용 데모데이터
+const initialPayrollData: PayrollMonthlyData[] = [
+  { month: '1월', currentYearAmount: 32.4, prevYearAmount: 29.8, baseSalary: 23.2, bonusAmount: 2.1, allowance: 2.8, insuranceSocial: 2.3, employerContribution: 2.0, newHireImpact: 0.6 },
+  { month: '2월', currentYearAmount: 32.8, prevYearAmount: 30.1, baseSalary: 23.5, bonusAmount: 2.0, allowance: 2.9, insuranceSocial: 2.4, employerContribution: 2.0, newHireImpact: 0.8 },
+  { month: '3월', currentYearAmount: 34.5, prevYearAmount: 31.0, baseSalary: 24.2, bonusAmount: 2.5, allowance: 3.1, insuranceSocial: 2.6, employerContribution: 2.1, newHireImpact: 1.4, note: '상반기 대규모 신규 입사자 급여 반영' },
+  { month: '4월', currentYearAmount: 34.8, prevYearAmount: 31.4, baseSalary: 24.5, bonusAmount: 2.2, allowance: 3.2, insuranceSocial: 2.7, employerContribution: 2.2, newHireImpact: 1.5 },
+  { month: '5월', currentYearAmount: 35.1, prevYearAmount: 31.8, baseSalary: 24.7, bonusAmount: 2.3, allowance: 3.2, insuranceSocial: 2.7, employerContribution: 2.2, newHireImpact: 1.6 },
+  { month: '6월', currentYearAmount: 35.6, prevYearAmount: 32.2, baseSalary: 25.0, bonusAmount: 2.4, allowance: 3.3, insuranceSocial: 2.7, employerContribution: 2.2, newHireImpact: 1.8 },
+  { month: '7월', currentYearAmount: 36.2, prevYearAmount: 32.5, baseSalary: 25.3, bonusAmount: 2.5, allowance: 3.4, insuranceSocial: 2.8, employerContribution: 2.2, newHireImpact: 2.0 },
+  { month: '8월 (당월)', currentYearAmount: 36.8, prevYearAmount: 32.9, baseSalary: 25.6, bonusAmount: 2.6, allowance: 3.5, insuranceSocial: 2.8, employerContribution: 2.3, newHireImpact: 2.2 },
+  { month: '9월 (예상)', currentYearAmount: 37.1, prevYearAmount: 33.2, baseSalary: 25.8, bonusAmount: 2.6, allowance: 3.5, insuranceSocial: 2.9, employerContribution: 2.3, newHireImpact: 2.4 },
+  { month: '10월 (예상)', currentYearAmount: 46.8, prevYearAmount: 41.5, baseSalary: 26.2, bonusAmount: 11.8, allowance: 3.6, insuranceSocial: 2.9, employerContribution: 2.3, newHireImpact: 2.7, isBonusPeak: true, note: '추석 명절 상여금 및 하반기 경영성과급 지급 스파이크' },
+  { month: '11월 (예상)', currentYearAmount: 37.5, prevYearAmount: 33.6, baseSalary: 26.3, bonusAmount: 2.7, allowance: 3.6, insuranceSocial: 2.6, employerContribution: 2.3, newHireImpact: 2.8 },
+  { month: '12월 (예상)', currentYearAmount: 43.2, prevYearAmount: 38.9, baseSalary: 26.5, bonusAmount: 8.2, allowance: 3.6, insuranceSocial: 2.6, employerContribution: 2.3, newHireImpact: 2.9, note: '연말 특별 인센티브 및 결산 수당' },
+];
+
+const departmentProductivityData: DepartmentProductivityData[] = [
+  { id: '1', department: '연구개발본부', headcount: 164, annualPayroll: 128.4, monthlyPayrollAvg: 1070, generatedRevenue: 890.0, kpiScore: 96.4, productivityPerPerson: 5.43, payrollRoi: 6.93 },
+  { id: '2', department: '생산본부', headcount: 184, annualPayroll: 119.6, monthlyPayrollAvg: 996, generatedRevenue: 1240.0, kpiScore: 94.8, productivityPerPerson: 6.74, payrollRoi: 10.37 },
+  { id: '3', department: '영업마케팅본부', headcount: 112, annualPayroll: 89.2, monthlyPayrollAvg: 743, generatedRevenue: 1420.0, kpiScore: 92.1, productivityPerPerson: 12.68, payrollRoi: 15.92 },
+  { id: '4', department: '물류운영팀', headcount: 82, annualPayroll: 45.8, monthlyPayrollAvg: 381, generatedRevenue: 280.0, kpiScore: 95.0, productivityPerPerson: 3.41, payrollRoi: 6.11 },
+  { id: '5', department: '경영지원본부', headcount: 64, annualPayroll: 42.6, monthlyPayrollAvg: 355, generatedRevenue: 190.0, kpiScore: 98.2, productivityPerPerson: 2.97, payrollRoi: 4.46 },
+  { id: '6', department: '품질보증팀', headcount: 42, annualPayroll: 28.4, monthlyPayrollAvg: 236, generatedRevenue: 210.0, kpiScore: 93.7, productivityPerPerson: 5.00, payrollRoi: 7.39 },
+];
+
+const payrollCostBreakdown: { name: string; value: number; color: string }[] = [
+  { name: '기본급', value: 68.2, color: '#2563eb' },
+  { name: '상여금 및 인센티브', value: 14.5, color: '#f59e0b' },
+  { name: '법정 제수당 (연장/야간)', value: 8.8, color: '#10b981' },
+  { name: '4대 사회보험 (회사부담)', value: 5.4, color: '#8b5cf6' },
+  { name: '퇴직급여충당금 및 복리후생', value: 3.1, color: '#ec4899' },
+];
 import {
   ResponsiveContainer,
   BarChart,

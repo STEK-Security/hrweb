@@ -13,7 +13,6 @@ import { HeadcountPage } from './features/headcount/HeadcountPage';
 import { DiversityPage } from './features/diversity/DiversityPage';
 import { OrgChartPage } from './features/org/OrgChartPage';
 import { DataQualityPage } from './features/quality/DataQualityPage';
-import { CertificatePage } from './features/cert/CertificatePage';
 import { TransfersPage } from './features/transfers/TransfersPage';
 import { CalendarPage } from './features/calendar/CalendarPage';
 import { TrainingPage } from './features/training/TrainingPage';
@@ -94,8 +93,6 @@ export default function App() {
           <LeavePage />
         ) : activeMenu === '데이터품질' ? (
           <DataQualityPage />
-        ) : activeMenu === '증명서' ? (
-          <CertificatePage />
         ) : activeMenu === '발령이력' ? (
           <TransfersPage />
         ) : activeMenu === '캘린더' ? (

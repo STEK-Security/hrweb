@@ -1,9 +1,8 @@
 /**
- * 교육관리(T11.9) — training_courses 목록(+CRUD) 및 선택 과정의 수료현황 도넛 + training_records CRUD.
+ * 교육관리(T11.9) — 원본 TrainingManagement UI(hr-app.html) 재사용, training_courses/training_records DB 배선.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { GraduationCap, Plus, Pencil, Trash2, X, Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import {
   listEmployees,
   listTrainingCourses,
@@ -20,8 +19,9 @@ import {
 } from '../../lib/db';
 import { logEvent } from '../../lib/audit';
 import { EmployeePicker } from '../../components/EmployeePicker';
+import { TrainingManagement } from '../../components/TrainingManagement';
+import type { TrainingCourseItem, TrainingParticipant } from '../../types';
 
-const STATUS_COLOR: Record<TrainingRecord['status'], string> = { 수료: '#10b981', 진행중: '#3b82f6', 미수료: '#f43f5e' };
 const RECORD_STATUS: TrainingRecord['status'][] = ['진행중', '수료', '미수료'];
 const CATEGORY_OPTIONS = ['법정의무교육', '직무전문교육', '리더십교육', '신규입사자OJT'];
 const STATUS_OPTIONS = ['모집중', '진행중', '마감', '상시'];
@@ -38,6 +38,38 @@ interface CourseForm {
   instructor: string;
   status: string;
   mandatory: boolean;
+}
+
+// 원본 TrainingManagement props 형태로 매핑
+function mapCourseToItem(c: TrainingCourse, recs: TrainingRecord[]): TrainingCourseItem {
+  const targetCount = c.target_count ?? recs.length;
+  const completedCount = recs.filter((r) => r.status === '수료').length;
+  return {
+    id: c.id,
+    title: c.title,
+    category: (c.category as TrainingCourseItem['category']) ?? CATEGORY_OPTIONS[1] as TrainingCourseItem['category'],
+    targetCount,
+    completedCount,
+    completionRate: targetCount > 0 ? Math.round((completedCount / targetCount) * 1000) / 10 : 0,
+    startDate: c.start_date ?? '',
+    endDate: c.end_date ?? '',
+    instructor: c.instructor ?? '',
+    status: (c.status as TrainingCourseItem['status']) ?? STATUS_OPTIONS[1] as TrainingCourseItem['status'],
+    mandatory: c.mandatory,
+  };
+}
+
+function mapRecordToParticipant(r: TrainingRecord, course: TrainingCourse | undefined, emp: Employee | undefined): TrainingParticipant {
+  return {
+    id: r.id,
+    name: emp?._name ?? '(삭제된 직원)',
+    department: emp?._div || emp?._team || '-',
+    position: emp?._grade || '-',
+    courseTitle: course?.title ?? '-',
+    status: r.status,
+    completedDate: r.completed_date ?? undefined,
+    score: r.score ?? undefined,
+  };
 }
 
 export function TrainingPage() {
@@ -78,6 +110,12 @@ export function TrainingPage() {
     return m;
   }, [employees]);
 
+  const courseMap = useMemo(() => {
+    const m = new Map<string, TrainingCourse>();
+    for (const c of courses) m.set(c.id, c);
+    return m;
+  }, [courses]);
+
   const recordsByCourse = useMemo(() => {
     const m = new Map<string, TrainingRecord[]>();
     for (const r of records) {
@@ -87,15 +125,14 @@ export function TrainingPage() {
     return m;
   }, [records]);
 
-  const selectedCourse = courses.find((c) => c.id === selectedCourseId) ?? null;
-  const selectedRecords = selectedCourseId ? recordsByCourse.get(selectedCourseId) ?? [] : [];
-  const donutData = useMemo(() => {
-    const counts: Record<string, number> = { 수료: 0, 진행중: 0, 미수료: 0 };
-    for (const r of selectedRecords) counts[r.status] = (counts[r.status] ?? 0) + 1;
-    return Object.entries(counts)
-      .filter(([, v]) => v > 0)
-      .map(([name, value]) => ({ name, value, color: STATUS_COLOR[name as TrainingRecord['status']] }));
-  }, [selectedRecords]);
+  const courseItems = useMemo(
+    () => courses.map((c) => mapCourseToItem(c, recordsByCourse.get(c.id) ?? [])),
+    [courses, recordsByCourse]
+  );
+  const participantItems = useMemo(
+    () => records.map((r) => mapRecordToParticipant(r, courseMap.get(r.course_id), empMap.get(r.employee_id))),
+    [records, courseMap, empMap]
+  );
 
   // 과정 CRUD
   const openCreateCourse = () => {
@@ -104,7 +141,9 @@ export function TrainingPage() {
     setError(null);
     setCourseFormOpen(true);
   };
-  const openEditCourse = (c: TrainingCourse) => {
+  const openEditCourse = (courseId: string) => {
+    const c = courseMap.get(courseId);
+    if (!c) return;
     setEditingCourse(c);
     setCourseForm({
       title: c.title,
@@ -155,7 +194,9 @@ export function TrainingPage() {
       setSaving(false);
     }
   };
-  const handleDeleteCourse = async (c: TrainingCourse) => {
+  const handleDeleteCourse = async (courseId: string) => {
+    const c = courseMap.get(courseId);
+    if (!c) return;
     if (!window.confirm(`"${c.title}" 과정을 삭제할까요? (수료현황도 함께 삭제됩니다)`)) return;
     const ok = await deleteTrainingCourse(c.id);
     if (!ok) return;
@@ -171,7 +212,13 @@ export function TrainingPage() {
     setError(null);
     setRecordFormOpen(true);
   };
-  const openEditRecord = (r: TrainingRecord) => {
+  const openCreateRecordForCourse = (courseId: string) => {
+    setSelectedCourseId(courseId);
+    openCreateRecord();
+  };
+  const openEditRecord = (recordId: string) => {
+    const r = records.find((x) => x.id === recordId);
+    if (!r) return;
     setEditingRecord(r);
     setRecordForm({ employee_id: r.employee_id, status: r.status, completed_date: r.completed_date ?? '', score: r.score != null ? String(r.score) : '' });
     setError(null);
@@ -179,14 +226,15 @@ export function TrainingPage() {
   };
   const handleSubmitRecord = async () => {
     setError(null);
-    if (!recordForm.employee_id || !selectedCourseId) {
+    const courseId = editingRecord ? editingRecord.course_id : selectedCourseId;
+    if (!recordForm.employee_id || !courseId) {
       setError('직원을 선택하세요.');
       return;
     }
     setSaving(true);
     try {
       const fields = {
-        course_id: selectedCourseId,
+        course_id: courseId,
         employee_id: recordForm.employee_id,
         status: recordForm.status,
         completed_date: recordForm.completed_date || null,
@@ -210,7 +258,9 @@ export function TrainingPage() {
       setSaving(false);
     }
   };
-  const handleDeleteRecord = async (r: TrainingRecord) => {
+  const handleDeleteRecord = async (recordId: string) => {
+    const r = records.find((x) => x.id === recordId);
+    if (!r) return;
     if (!window.confirm('이 수료현황을 삭제할까요?')) return;
     const ok = await deleteTrainingRecord(r.id);
     if (!ok) return;
@@ -223,140 +273,17 @@ export function TrainingPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-        <GraduationCap className="w-5 h-5 text-blue-600" />
-        교육 관리
-      </h2>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-800">교육 과정 ({courses.length})</h3>
-            <button
-              type="button"
-              onClick={openCreateCourse}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              과정 등록
-            </button>
-          </div>
-          <div className="overflow-x-auto max-h-[calc(100vh-380px)]">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
-                <tr>
-                  <th className="px-3 py-2.5">과정명</th>
-                  <th className="px-3 py-2.5">분류</th>
-                  <th className="px-3 py-2.5">기간</th>
-                  <th className="px-3 py-2.5">강사</th>
-                  <th className="px-3 py-2.5">상태</th>
-                  <th className="px-3 py-2.5">수료</th>
-                  <th className="px-3 py-2.5">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {courses.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-slate-400">등록된 과정이 없습니다.</td>
-                  </tr>
-                ) : (
-                  courses.map((c) => {
-                    const recs = recordsByCourse.get(c.id) ?? [];
-                    const done = recs.filter((r) => r.status === '수료').length;
-                    return (
-                      <tr
-                        key={c.id}
-                        onClick={() => setSelectedCourseId(c.id)}
-                        className={`cursor-pointer transition-colors ${selectedCourseId === c.id ? 'bg-blue-50' : 'hover:bg-blue-50/40'}`}
-                      >
-                        <td className="px-3 py-2.5 font-bold text-slate-900">
-                          {c.title}
-                          {c.mandatory && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200">필수</span>}
-                        </td>
-                        <td className="px-3 py-2.5">{c.category ?? '-'}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{c.start_date ?? '-'} ~ {c.end_date ?? '-'}</td>
-                        <td className="px-3 py-2.5">{c.instructor ?? '-'}</td>
-                        <td className="px-3 py-2.5">{c.status ?? '-'}</td>
-                        <td className="px-3 py-2.5">{done}/{recs.length}{c.target_count ? ` (대상 ${c.target_count})` : ''}</td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-1">
-                            <button type="button" onClick={(e) => { e.stopPropagation(); openEditCourse(c); }} aria-label="수정" className="p-1 rounded text-blue-600 hover:bg-blue-50">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteCourse(c); }} aria-label="삭제" className="p-1 rounded text-rose-600 hover:bg-rose-50">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4">
-            <h3 className="text-sm font-bold text-slate-900 mb-2">{selectedCourse ? `${selectedCourse.title} 수료현황` : '과정을 선택하세요'}</h3>
-            {!selectedCourse ? (
-              <div className="h-40 flex items-center justify-center text-xs text-slate-400">좌측에서 과정을 클릭하세요.</div>
-            ) : donutData.length === 0 ? (
-              <div className="h-40 flex items-center justify-center text-xs text-slate-400">수료현황 데이터가 없습니다.</div>
-            ) : (
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie isAnimationActive={false} data={donutData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={65} paddingAngle={3}>
-                      {donutData.map((d, i) => (
-                        <Cell key={`c-${i}`} fill={d.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(v: any, n: any) => [`${v}명`, n]} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-
-          {selectedCourse && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-800">수료자 명단</h3>
-                <button type="button" onClick={openCreateRecord} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">
-                  <Plus className="w-3.5 h-3.5" />
-                  등록
-                </button>
-              </div>
-              <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 text-xs">
-                {selectedRecords.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-slate-400">등록된 수료현황이 없습니다.</p>
-                ) : (
-                  selectedRecords.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between px-4 py-2">
-                      <div>
-                        <span className="font-bold text-slate-900">{empMap.get(r.employee_id)?._name ?? '(삭제된 직원)'}</span>{' '}
-                        <span className="text-slate-500">{r.status}{r.score != null ? ` · ${r.score}점` : ''}{r.completed_date ? ` · ${r.completed_date}` : ''}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => openEditRecord(r)} aria-label="수정" className="p-1 rounded text-blue-600 hover:bg-blue-50">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button type="button" onClick={() => handleDeleteRecord(r)} aria-label="삭제" className="p-1 rounded text-rose-600 hover:bg-rose-50">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+    <>
+      <TrainingManagement
+        courses={courseItems}
+        records={participantItems}
+        onCreateCourse={openCreateCourse}
+        onEditCourse={openEditCourse}
+        onDeleteCourse={handleDeleteCourse}
+        onCreateRecordForCourse={openCreateRecordForCourse}
+        onEditRecord={openEditRecord}
+        onDeleteRecord={handleDeleteRecord}
+      />
 
       {courseFormOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
@@ -435,6 +362,12 @@ export function TrainingPage() {
             <form onSubmit={(e) => { e.preventDefault(); void handleSubmitRecord(); }} className="space-y-3 text-xs">
               {error && <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 font-semibold">{error}</div>}
               <div>
+                <label className="block font-bold text-slate-700 mb-1">교육 과정</label>
+                <div className="px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-600">
+                  {courseMap.get(editingRecord ? editingRecord.course_id : selectedCourseId ?? '')?.title ?? '-'}
+                </div>
+              </div>
+              <div>
                 <label className="block font-bold text-slate-700 mb-1">대상 직원 *</label>
                 {editingRecord ? (
                   <div className="px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-600">{empMap.get(recordForm.employee_id)?._name ?? recordForm.employee_id}</div>
@@ -471,6 +404,6 @@ export function TrainingPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
