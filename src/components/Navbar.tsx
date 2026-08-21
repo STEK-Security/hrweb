@@ -10,6 +10,7 @@ import {
   Award,
   FileSpreadsheet,
   LogOut,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -27,6 +28,8 @@ interface NavbarProps {
   onOpenDataSource?: () => void;
   /** supabase 연결 상태 */
   sbStatus?: 'checking' | 'ok' | 'down' | 'off';
+  /** 관리자만 "감사로그" 메뉴 노출 */
+  isAdmin?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -40,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onOpenDataSource,
   sbStatus,
+  isAdmin,
 }) => {
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
@@ -77,6 +81,15 @@ export const Navbar: React.FC<NavbarProps> = ({
       label: '평가 관리',
       icon: <Award className="w-4 h-4" />,
     },
+    ...(isAdmin
+      ? [
+          {
+            id: '감사로그' as ActiveMenu,
+            label: '감사로그',
+            icon: <ShieldAlert className="w-4 h-4" />,
+          },
+        ]
+      : []),
   ];
 
   return (

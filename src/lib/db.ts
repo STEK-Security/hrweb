@@ -33,6 +33,26 @@ export interface OrgSetting {
   updated_at: string;
 }
 
+export interface AuditLogRow {
+  id: number;
+  actor: string | null;
+  action: string;
+  target_id: string | null;
+  target_table: string | null;
+  column_name: string | null;
+  meta: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  actor_email: string | null;
+  ts: string;
+}
+
+export interface ProfileLite {
+  id: string;
+  email: string | null;
+  name: string | null;
+}
+
 /** employees 전체 조회 → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
@@ -79,4 +99,43 @@ export async function listOrgSettings(): Promise<OrgSetting[]> {
   const { data, error } = await supabase.from('org_settings').select('*');
   if (error || !data) return [];
   return data as OrgSetting[];
+}
+
+export interface AuditLogFilter {
+  from?: string;
+  to?: string;
+  action?: string;
+  actorId?: string;
+  targetTable?: string;
+}
+
+/** 감사로그 페이지 조회(관리자만 RLS 통과, 그 외는 빈 배열). ts 내림차순, 필터+페이지네이션. */
+export async function listAuditLog(
+  filter: AuditLogFilter,
+  page: number,
+  pageSize: number
+): Promise<{ rows: AuditLogRow[]; total: number }> {
+  if (!supabase) return { rows: [], total: 0 };
+  let query = supabase
+    .from('audit_log')
+    .select('*', { count: 'exact' })
+    .order('ts', { ascending: false });
+  if (filter.from) query = query.gte('ts', filter.from);
+  if (filter.to) query = query.lte('ts', filter.to);
+  if (filter.action) query = query.eq('action', filter.action);
+  if (filter.actorId) query = query.eq('actor', filter.actorId);
+  if (filter.targetTable) query = query.eq('target_table', filter.targetTable);
+
+  const start = page * pageSize;
+  const { data, error, count } = await query.range(start, start + pageSize - 1);
+  if (error || !data) return { rows: [], total: 0 };
+  return { rows: data as AuditLogRow[], total: count ?? data.length };
+}
+
+/** actor 표시용 프로필 목록(이메일·이름). 관리자는 전체, 그 외는 본인만(RLS). */
+export async function listProfiles(): Promise<ProfileLite[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('profiles').select('id,email,name');
+  if (error || !data) return [];
+  return data as ProfileLite[];
 }

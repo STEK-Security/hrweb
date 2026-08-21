@@ -8,7 +8,8 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigured } from './supabase';
 import { logEvent } from './audit';
 
-export type Role = '시스템관리자' | '인사담당자' | '팀장' | '일반';
+// 0012/hotfix_0012 2역할 마이그레이션 이후 DB 값과 일치시킨다(사용자=인사팀 전 기능, 관리자=+로그·계정·설정).
+export type Role = '사용자' | '관리자';
 
 /** 이메일/비밀번호 로그인. 실패 시 한국어 에러 메시지를 던진다. */
 export async function signIn(email: string, password: string): Promise<Session> {

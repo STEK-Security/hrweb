@@ -77,7 +77,7 @@ const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
   },
 ];
 
-const HR_ROLES = new Set(['시스템관리자', '인사담당자']);
+const HR_ROLES = new Set(['사용자', '관리자']);
 
 function Field({ label, value }: { label: string; value: unknown }) {
   return (

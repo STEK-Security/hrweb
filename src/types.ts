@@ -5,7 +5,8 @@ export type ActiveMenu =
   | '휴직자관리'
   | '캘린더'
   | '교육관리'
-  | '평가관리';
+  | '평가관리'
+  | '감사로그';
 
 export type HeadcountSubTab = '상세분석' | '입퇴사' | '인력구성비' | '휴직';
 
