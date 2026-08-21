@@ -50,9 +50,22 @@ export function onAuthChange(cb: (session: Session | null) => void): () => void 
   return () => data.subscription.unsubscribe();
 }
 
-/** role 조회 결과. 실패해도 '일반'으로 조용히 폴백하지 않고 error 로 명시한다. */
+/**
+ * role 조회 결과. 실패해도 '일반'으로 조용히 폴백하지 않고 error 로 명시한다.
+ * 본인 profiles.enabled 가 false 면(관리자가 계정을 비활성화) 즉시 signOut 처리한다 —
+ * 서버측(0021_security_hardening의 current_role())이 근본 방어이고, 이건 UX 정리다.
+ */
 async function fetchRole(userId: string): Promise<{ role: Role | null; error: boolean }> {
   if (!supabase) return { role: null, error: true };
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('enabled')
+    .eq('id', userId)
+    .single();
+  if (profile && profile.enabled === false) {
+    await signOut();
+    return { role: null, error: true };
+  }
   const { data, error } = await supabase
     .from('user_roles')
     .select('role')

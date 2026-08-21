@@ -141,10 +141,15 @@ export async function listEmployees(): Promise<Employee[]> {
   return deriveAll(data as RawRow[]);
 }
 
-/** 단일 직원 조회(파생필드 포함). 없으면 null. */
+/** 단일 직원 조회(파생필드 포함, soft delete 된 행 제외). 없으면 null. */
 export async function getEmployee(id: string): Promise<Employee | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from('employees').select('*').eq('id', id).single();
+  const { data, error } = await supabase
+    .from('employees')
+    .select('*')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .single();
   if (error || !data) return null;
   return derive(data as RawRow, 0);
 }
@@ -500,15 +505,16 @@ export async function listUserRoles(): Promise<UserRoleRow[]> {
   return data as UserRoleRow[];
 }
 
-/** 역할 변경(관리자만 RLS 통과). */
+/** 역할 변경(관리자만 RLS 통과). RLS 로 막혀 0행 갱신되면 에러 없이 조용히 실패하므로 반환행으로 확인한다. */
 export async function updateUserRole(userId: string, role: string): Promise<boolean> {
   if (!supabase) return false;
   const { data: sess } = await supabase.auth.getSession();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('user_roles')
     .update({ role, updated_by: sess.session?.user.id ?? null, updated_at: new Date().toISOString() })
-    .eq('user_id', userId);
-  return !error;
+    .eq('user_id', userId)
+    .select();
+  return !error && !!data && data.length > 0;
 }
 
 /** 계정 활성/비활성 토글(관리자만 RLS 통과). */
@@ -518,13 +524,22 @@ export async function setProfileEnabled(id: string, enabled: boolean): Promise<b
   return !error;
 }
 
-/** 조직·기준·기능토글 설정 수정(관리자만 RLS 통과). */
+/** 조직·기준·기능토글 설정 수정(관리자만 RLS 통과). RLS 로 막혀 0행 갱신되면 반환행으로 확인한다. */
 export async function updateOrgSetting(key: string, value: unknown): Promise<boolean> {
   if (!supabase) return false;
   const { data: sess } = await supabase.auth.getSession();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('org_settings')
     .update({ value, updated_by: sess.session?.user.id ?? null, updated_at: new Date().toISOString() })
-    .eq('key', key);
-  return !error;
+    .eq('key', key)
+    .select();
+  return !error && !!data && data.length > 0;
+}
+
+/** 기능토글 등 단일 설정값 조회. 미존재/조회실패 시 기본값 true(fail-open, UI 숨김 없이 노출). */
+export async function getOrgSetting(key: string): Promise<boolean> {
+  if (!supabase) return true;
+  const { data, error } = await supabase.from('org_settings').select('value').eq('key', key).single();
+  if (error || !data) return true;
+  return data.value !== false;
 }

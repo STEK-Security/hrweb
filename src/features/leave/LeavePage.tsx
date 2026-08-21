@@ -3,7 +3,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Search, UserCheck, UserPlus, Pencil } from 'lucide-react';
-import { listLeave, type LeaveRecord } from '../../lib/db';
+import { listLeave, getOrgSetting, type LeaveRecord } from '../../lib/db';
 import { LeaveForm } from './LeaveForm';
 
 type StatusFilter = '전체' | LeaveRecord['status'];
@@ -29,6 +29,7 @@ export function LeavePage() {
   const [dept, setDept] = useState('전체');
   const [status, setStatus] = useState<StatusFilter>('전체');
   const [formRecord, setFormRecord] = useState<LeaveRecord | 'new' | null>(null);
+  const [inputEnabled, setInputEnabled] = useState(true);
 
   const reload = () => {
     setLoading(true);
@@ -40,6 +41,7 @@ export function LeavePage() {
 
   useEffect(() => {
     reload();
+    getOrgSetting('leave_input_enabled').then(setInputEnabled);
   }, []);
 
   const depts = useMemo(() => {
@@ -66,14 +68,16 @@ export function LeavePage() {
           <span className="text-xs text-slate-500">
             조회 {filtered.length}명 / 전체 {records.length}명
           </span>
-          <button
-            type="button"
-            onClick={() => setFormRecord('new')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            휴직자 등록
-          </button>
+          {inputEnabled && (
+            <button
+              type="button"
+              onClick={() => setFormRecord('new')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              휴직자 등록
+            </button>
+          )}
         </div>
       </div>
 

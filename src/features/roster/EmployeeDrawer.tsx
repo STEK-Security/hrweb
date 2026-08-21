@@ -151,7 +151,7 @@ export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerPr
     const value = await revealField(employeeId, field);
     setRevealed((r) => ({ ...r, [field]: value }));
     setRevealing((r) => ({ ...r, [field]: false }));
-    logEvent('reveal', { targetId: employeeId, targetTable: 'employee_sensitive', meta: { field } });
+    // 서버 reveal_sensitive_field RPC 가 이미 audit_log 에 기록하므로 여기서 다시 로깅하지 않는다(이중로깅 방지).
   };
 
   const parseAcct = (raw: string | null): MaskedAcct => {
