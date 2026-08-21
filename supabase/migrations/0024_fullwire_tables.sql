@@ -103,7 +103,8 @@ create table if not exists public.mail_queue (
   related_id uuid,
   sent_at timestamptz,
   created_by uuid default auth.uid(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint mail_queue_to_email_format check (to_email like '%_@_%.__%')
 );
 
 alter table public.mail_queue enable row level security;
@@ -123,11 +124,18 @@ create policy "mail_queue hr insert" on public.mail_queue
 
 -- n8n_ingest: status/sent_at 컬럼만 update 가능(발송 결과 반영). 0010_n8n_role.sql 에서 role 생성됨.
 grant update (status, sent_at) on public.mail_queue to n8n_ingest;
+-- n8n_ingest: 발송 대상 조회를 위해 select 도 필요(본문/수신자를 읽어야 발송 가능).
+grant select (id, to_email, to_name, subject, body, category, status, related_table, related_id, created_at) on public.mail_queue to n8n_ingest;
 
 create policy "mail_queue n8n update status" on public.mail_queue
   for update
   to n8n_ingest
   using (true)
   with check (true);
+
+create policy "mailq n8n select" on public.mail_queue
+  for select
+  to n8n_ingest
+  using (true);
 
 create index if not exists mail_queue_status_idx on public.mail_queue (status, created_at);
