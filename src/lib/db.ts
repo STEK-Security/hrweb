@@ -469,3 +469,62 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
   const { error } = await supabase.from('evaluations').delete().eq('id', id);
   return !error;
 }
+
+export interface AdminProfileRow {
+  id: string;
+  email: string | null;
+  name: string | null;
+  dept: string | null;
+  enabled: boolean;
+}
+
+export interface UserRoleRow {
+  user_id: string;
+  role: string;
+  updated_at: string;
+}
+
+/** 계정관리 화면용 profiles 전체 조회(관리자는 전체, 그 외는 본인 행만 RLS). */
+export async function listProfilesFull(): Promise<AdminProfileRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('profiles').select('id,email,name,dept,enabled');
+  if (error || !data) return [];
+  return data as AdminProfileRow[];
+}
+
+/** user_roles 전체 조회(관리자는 전체, 그 외는 본인 것만 RLS). */
+export async function listUserRoles(): Promise<UserRoleRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('user_roles').select('user_id,role,updated_at');
+  if (error || !data) return [];
+  return data as UserRoleRow[];
+}
+
+/** 역할 변경(관리자만 RLS 통과). */
+export async function updateUserRole(userId: string, role: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data: sess } = await supabase.auth.getSession();
+  const { error } = await supabase
+    .from('user_roles')
+    .update({ role, updated_by: sess.session?.user.id ?? null, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+  return !error;
+}
+
+/** 계정 활성/비활성 토글(관리자만 RLS 통과). */
+export async function setProfileEnabled(id: string, enabled: boolean): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('profiles').update({ enabled }).eq('id', id);
+  return !error;
+}
+
+/** 조직·기준·기능토글 설정 수정(관리자만 RLS 통과). */
+export async function updateOrgSetting(key: string, value: unknown): Promise<boolean> {
+  if (!supabase) return false;
+  const { data: sess } = await supabase.auth.getSession();
+  const { error } = await supabase
+    .from('org_settings')
+    .update({ value, updated_by: sess.session?.user.id ?? null, updated_at: new Date().toISOString() })
+    .eq('key', key);
+  return !error;
+}

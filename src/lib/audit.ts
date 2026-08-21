@@ -38,7 +38,9 @@ export type AuditAction =
   | 'delete_training_record'
   | 'create_evaluation'
   | 'update_evaluation'
-  | 'delete_evaluation';
+  | 'delete_evaluation'
+  | 'toggle_account'
+  | 'update_settings';
 
 export interface LogEventOptions {
   targetId?: string | null;

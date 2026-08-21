@@ -12,7 +12,9 @@ export type ActiveMenu =
   | '증명서'
   | '교육관리'
   | '평가관리'
-  | '감사로그';
+  | '감사로그'
+  | '계정관리'
+  | '설정';
 
 export type HeadcountSubTab = '상세분석' | '입퇴사' | '인력구성비' | '휴직';
 
