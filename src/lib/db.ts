@@ -475,6 +475,147 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
   return !error;
 }
 
+export interface PayrollMonthlyRow {
+  id: string;
+  month: string;
+  current_year_amount: number;
+  prev_year_amount: number;
+  base_salary: number;
+  bonus_amount: number;
+  allowance: number;
+  insurance_social: number;
+  employer_contribution: number;
+  new_hire_impact: number;
+  note: string | null;
+  is_bonus_peak: boolean;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface DeptProductivityRow {
+  id: string;
+  department: string;
+  headcount: number;
+  annual_payroll: number;
+  monthly_payroll_avg: number;
+  generated_revenue: number;
+  kpi_score: number;
+  productivity_per_person: number;
+  payroll_roi: number;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** 월별 인건비 분석 데이터 조회(PayrollAnalysis 화면용). sort_order 오름차순. */
+export async function listPayrollMonthly(): Promise<PayrollMonthlyRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('payroll_monthly')
+    .select('*')
+    .order('sort_order', { ascending: true });
+  if (error || !data) return [];
+  return data as PayrollMonthlyRow[];
+}
+
+/** 부서별 인건비·생산성 데이터 조회(PayrollAnalysis 화면용). sort_order 오름차순. */
+export async function listDeptProductivity(): Promise<DeptProductivityRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('department_productivity')
+    .select('*')
+    .order('sort_order', { ascending: true });
+  if (error || !data) return [];
+  return data as DeptProductivityRow[];
+}
+
+export interface ConsultLog {
+  id: string;
+  leave_id: string;
+  note: string;
+  consulted_at: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** 휴직자 상담기록 조회. 상담일 내림차순. */
+export async function listConsultLogs(leaveId: string): Promise<ConsultLog[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('leave_consult_logs')
+    .select('*')
+    .eq('leave_id', leaveId)
+    .order('consulted_at', { ascending: false });
+  if (error || !data) return [];
+  return data as ConsultLog[];
+}
+
+/** 휴직자 상담기록 등록. consultedAt 미지정 시 DB 기본값(오늘). 성공 시 새 id, 실패 시 null. */
+export async function addConsultLog(
+  leaveId: string,
+  note: string,
+  consultedAt?: string
+): Promise<string | null> {
+  if (!supabase) return null;
+  const fields: Record<string, unknown> = { leave_id: leaveId, note };
+  if (consultedAt) fields.consulted_at = consultedAt;
+  const { data, error } = await supabase.from('leave_consult_logs').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export interface MailQueueRow {
+  id: string;
+  to_email: string;
+  to_name: string | null;
+  subject: string;
+  body: string | null;
+  category: string | null;
+  status: '대기' | '발송완료' | '실패';
+  related_table: string | null;
+  related_id: string | null;
+  sent_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface EnqueueMailInput {
+  toEmail: string;
+  toName?: string;
+  subject: string;
+  body?: string;
+  category?: string;
+  relatedTable?: string;
+  relatedId?: string;
+}
+
+/** 메일 발송큐 다건 등록(status는 항상 '대기' 로 시작, n8n이 발송 후 갱신). 성공 시 true. */
+export async function enqueueMail(rows: EnqueueMailInput[]): Promise<boolean> {
+  if (!supabase) return false;
+  const payload = rows.map((r) => ({
+    to_email: r.toEmail,
+    to_name: r.toName ?? null,
+    subject: r.subject,
+    body: r.body ?? null,
+    category: r.category ?? null,
+    related_table: r.relatedTable ?? null,
+    related_id: r.relatedId ?? null,
+  }));
+  const { error } = await supabase.from('mail_queue').insert(payload);
+  return !error;
+}
+
+/** 메일 발송큐 조회(최신순). limit 미지정 시 전체. */
+export async function listMailQueue(limit?: number): Promise<MailQueueRow[]> {
+  if (!supabase) return [];
+  let query = supabase.from('mail_queue').select('*').order('created_at', { ascending: false });
+  if (limit) query = query.limit(limit);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as MailQueueRow[];
+}
+
 export interface AdminProfileRow {
   id: string;
   email: string | null;
