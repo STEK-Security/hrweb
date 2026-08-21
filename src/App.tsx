@@ -7,7 +7,7 @@ import { RosterPage } from './features/roster/RosterPage';
 import type { ActiveMenu } from './types';
 
 export default function App() {
-  const { session, user, role, loading } = useAuth();
+  const { session, user, role, roleError, loading } = useAuth();
   const [activeMenu, setActiveMenu] = useState<ActiveMenu>('대시보드');
 
   if (loading) {
@@ -23,6 +23,24 @@ export default function App() {
 
   if (!session) {
     return <LoginPage />;
+  }
+
+  if (roleError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans text-slate-900">
+        <div className="text-center">
+          <h1 className="text-xl font-bold">STEK HR</h1>
+          <p className="mt-2 text-sm text-red-600">권한 확인에 실패했습니다. 새로고침하거나 관리자에게 문의하세요.</p>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-4 rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+          >
+            로그아웃
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const displayName = user?.email ?? '사용자';

@@ -44,21 +44,24 @@ export function onAuthChange(cb: (session: Session | null) => void): () => void 
   return () => data.subscription.unsubscribe();
 }
 
-async function fetchRole(userId: string): Promise<Role> {
-  if (!supabase) return '일반';
+/** role 조회 결과. 실패해도 '일반'으로 조용히 폴백하지 않고 error 로 명시한다. */
+async function fetchRole(userId: string): Promise<{ role: Role | null; error: boolean }> {
+  if (!supabase) return { role: null, error: true };
   const { data, error } = await supabase
     .from('user_roles')
     .select('role')
     .eq('user_id', userId)
     .single();
-  if (error || !data) return '일반';
-  return (data.role as Role) ?? '일반';
+  if (error || !data) return { role: null, error: true };
+  return { role: data.role as Role, error: false };
 }
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   role: Role | null;
+  /** role 조회가 실패했음을 나타낸다. session 은 유지된 채로 화면이 안내를 보여줘야 한다. */
+  roleError: boolean;
   loading: boolean;
 }
 
@@ -68,6 +71,7 @@ export function useAuth(): AuthState {
     session: null,
     user: null,
     role: null,
+    roleError: false,
     loading: true,
   });
 
@@ -76,11 +80,15 @@ export function useAuth(): AuthState {
 
     async function applySession(session: Session | null) {
       if (!session) {
-        if (!cancelled) setState({ session: null, user: null, role: null, loading: false });
+        if (!cancelled) {
+          setState({ session: null, user: null, role: null, roleError: false, loading: false });
+        }
         return;
       }
-      const role = await fetchRole(session.user.id);
-      if (!cancelled) setState({ session, user: session.user, role, loading: false });
+      const { role, error } = await fetchRole(session.user.id);
+      if (!cancelled) {
+        setState({ session, user: session.user, role, roleError: error, loading: false });
+      }
     }
 
     getSession().then(applySession);
