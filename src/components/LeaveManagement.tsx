@@ -27,10 +27,10 @@ interface LeaveManagementProps {
   onUpdateLeaveStatus: (id: string, status: LeavePersonItem['status']) => void;
   /** 휴직자 등록 진입점(선택). 전달되면 헤더 버튼 영역에 등록 버튼이 추가된다. */
   onRegisterNew?: () => void;
-  /** 대체인력 매칭 실제 저장(선택). 전달되면 저장이 DB에 반영되고, 미전달 시 임시표시(미저장) 동작 유지. */
-  onSaveSubstitute?: (leaveId: string, name: string) => void;
-  /** 상담일지 실제 저장(선택). 전달되면 저장이 DB에 반영되고, 미전달 시 임시표시(미저장) 동작 유지. */
-  onSaveConsult?: (leaveId: string, note: string) => void;
+  /** 대체인력 매칭 실제 저장(선택). 전달되면 저장이 DB에 반영되고 성공여부(boolean)를 반환, 미전달 시 임시표시(미저장) 동작 유지. */
+  onSaveSubstitute?: (leaveId: string, name: string) => Promise<boolean>;
+  /** 상담일지 실제 저장(선택). 전달되면 저장이 DB에 반영되고 성공여부(boolean)를 반환, 미전달 시 임시표시(미저장) 동작 유지. */
+  onSaveConsult?: (leaveId: string, note: string) => Promise<boolean>;
   /** 상담일지 모달이 열릴 때 호출(선택). 상위에서 해당 휴직자의 상담이력을 조회해 consultLogs로 내려줄 때 사용. */
   onOpenConsult?: (leaveId: string) => void;
   /** 상담일지 모달에 표시할 이력(선택). onOpenConsult로 조회된 목록을 그대로 전달. */
@@ -106,15 +106,20 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
     setShowAssignSubstituteModal(true);
   };
 
-  const handleSaveSubstitute = () => {
+  const handleSaveSubstitute = async () => {
     if (!selectedPersonForModal) return;
+    const person = selectedPersonForModal;
     const name = substituteInput || '배치완료';
     setShowAssignSubstituteModal(false);
     if (onSaveSubstitute) {
-      onSaveSubstitute(selectedPersonForModal.id, name);
-      setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${name})이 저장되었습니다.`);
+      const ok = await onSaveSubstitute(person.id, name);
+      setNotificationMsg(
+        ok
+          ? `[${person.name}] 대상자의 대체인력(${name})이 저장되었습니다.`
+          : `[${person.name}] 대상자의 대체인력 저장 실패 — 다시 시도해 주세요.`
+      );
     } else {
-      setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${name})이 임시 표시(미저장)되었습니다.`);
+      setNotificationMsg(`[${person.name}] 대상자의 대체인력(${name})이 임시 표시(미저장)되었습니다.`);
     }
     setTimeout(() => setNotificationMsg(null), 4000);
   };
@@ -126,14 +131,19 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
     onOpenConsult?.(person.id);
   };
 
-  const handleSaveConsult = () => {
+  const handleSaveConsult = async () => {
     if (!selectedPersonForModal) return;
+    const person = selectedPersonForModal;
     setShowConsultLogModal(false);
     if (onSaveConsult) {
-      onSaveConsult(selectedPersonForModal.id, consultText);
-      setNotificationMsg(`[${selectedPersonForModal.name}] 사전 복직 상담 일지가 저장되었습니다.`);
+      const ok = await onSaveConsult(person.id, consultText);
+      setNotificationMsg(
+        ok
+          ? `[${person.name}] 사전 복직 상담 일지가 저장되었습니다.`
+          : `[${person.name}] 사전 복직 상담 일지 저장 실패 — 다시 시도해 주세요.`
+      );
     } else {
-      setNotificationMsg(`[${selectedPersonForModal.name}] 사전 복직 상담 일지가 임시 표시(미저장)되었습니다.`);
+      setNotificationMsg(`[${person.name}] 사전 복직 상담 일지가 임시 표시(미저장)되었습니다.`);
     }
     setTimeout(() => setNotificationMsg(null), 4000);
   };

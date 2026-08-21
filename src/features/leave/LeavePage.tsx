@@ -77,20 +77,22 @@ export function LeavePage() {
     }
   };
 
-  const handleSaveSubstitute = async (leaveId: string, name: string) => {
+  const handleSaveSubstitute = async (leaveId: string, name: string): Promise<boolean> => {
     const ok = await updateLeave(leaveId, { substitute_assigned: true, substitute_name: name });
     if (ok) {
       await logEvent('update_leave', { targetId: leaveId, targetTable: 'leave_records', meta: { field: 'substitute' } });
       reload();
     }
+    return ok;
   };
 
-  const handleSaveConsult = async (leaveId: string, note: string) => {
+  const handleSaveConsult = async (leaveId: string, note: string): Promise<boolean> => {
     const id = await addConsultLog(leaveId, note);
     if (id) {
       await logEvent('update_leave', { targetId: leaveId, targetTable: 'leave_records', meta: { field: 'consult' } });
       setConsultLogs(await listConsultLogs(leaveId));
     }
+    return id != null;
   };
 
   const handleOpenConsult = async (leaveId: string) => {
