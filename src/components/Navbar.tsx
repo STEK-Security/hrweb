@@ -16,6 +16,8 @@ import {
   GraduationCap,
   Award,
   Wallet,
+  UserCog,
+  Settings,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 
@@ -126,6 +128,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             id: '감사로그' as ActiveMenu,
             label: '감사로그',
             icon: <ShieldAlert className="w-4 h-4" />,
+          },
+          {
+            id: '계정관리' as ActiveMenu,
+            label: '계정관리',
+            icon: <UserCog className="w-4 h-4" />,
+          },
+          {
+            id: '설정' as ActiveMenu,
+            label: '설정',
+            icon: <Settings className="w-4 h-4" />,
           },
         ]
       : []),

@@ -7,6 +7,8 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { RosterPage } from './features/roster/RosterPage';
 import { LeavePage } from './features/leave/LeavePage';
 import { AuditLogPage } from './features/admin/AuditLogPage';
+import { UsersPage } from './features/admin/UsersPage';
+import { OrgSettingsPage } from './features/admin/OrgSettingsPage';
 import { HeadcountPage } from './features/headcount/HeadcountPage';
 import { DiversityPage } from './features/diversity/DiversityPage';
 import { OrgChartPage } from './features/org/OrgChartPage';
@@ -26,8 +28,10 @@ export default function App() {
   const [globalEmployeeId, setGlobalEmployeeId] = useState<string | null>(null);
   const isAdmin = role === '관리자';
 
+  const ADMIN_ONLY_MENUS: ActiveMenu[] = ['감사로그', '계정관리', '설정'];
+
   const handleSelectMenu = (menu: ActiveMenu) => {
-    if (menu === '감사로그' && !isAdmin) return; // 관리자 외 화면 접근 차단
+    if (ADMIN_ONLY_MENUS.includes(menu) && !isAdmin) return; // 관리자 외 화면 접근 차단
     setActiveMenu(menu);
     logEvent('view_screen', { meta: { screen: menu } });
   };
@@ -104,6 +108,10 @@ export default function App() {
           <PayrollPlaceholderPage />
         ) : activeMenu === '감사로그' && isAdmin ? (
           <AuditLogPage />
+        ) : activeMenu === '계정관리' && isAdmin ? (
+          <UsersPage />
+        ) : activeMenu === '설정' && isAdmin ? (
+          <OrgSettingsPage />
         ) : (
           <DashboardPage />
         )}
