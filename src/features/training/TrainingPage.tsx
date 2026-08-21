@@ -13,9 +13,13 @@ import {
   createTrainingRecord,
   updateTrainingRecord,
   deleteTrainingRecord,
+  enqueueMail,
+  listMailQueue,
+  revealField,
   type Employee,
   type TrainingCourse,
   type TrainingRecord,
+  type MailQueueRow,
 } from '../../lib/db';
 import { logEvent } from '../../lib/audit';
 import { EmployeePicker } from '../../components/EmployeePicker';
@@ -89,6 +93,13 @@ export function TrainingPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [notifying, setNotifying] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState<string | null>(null);
+
+  const [mailQueueOpen, setMailQueueOpen] = useState(false);
+  const [mailQueueRows, setMailQueueRows] = useState<MailQueueRow[]>([]);
+  const [mailQueueLoading, setMailQueueLoading] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -268,12 +279,75 @@ export function TrainingPage() {
     reload();
   };
 
+  // 미수료자 독려 알림 -> 메일 큐 적재
+  const handleNotifyUncompleted = async (uncompleted: TrainingParticipant[]) => {
+    if (notifying) return;
+    setNotifying(true);
+    try {
+      const targets = uncompleted
+        .map((p) => records.find((r) => r.id === p.id))
+        .filter((r): r is TrainingRecord => !!r);
+      if (targets.length === 0) {
+        setNotifyMessage('미수료 대상자가 없습니다.');
+        return;
+      }
+      const rows = (
+        await Promise.all(
+          targets.map(async (r) => {
+            const emp = empMap.get(r.employee_id);
+            if (!emp) return null;
+            const email = await revealField(r.employee_id, 'email');
+            if (!email) return null;
+            const course = courseMap.get(r.course_id);
+            return {
+              toEmail: email,
+              toName: emp._name,
+              subject: '[교육] 미수료 과정 이수 독려',
+              body: `${emp._name}님, "${course?.title ?? '-'}" 과정이 미수료 상태입니다. 빠른 시일 내 이수를 완료해 주세요.`,
+              category: 'training_reminder',
+              relatedTable: 'training_records',
+              relatedId: r.id,
+            };
+          })
+        )
+      ).filter((r): r is NonNullable<typeof r> => r != null);
+      const skipped = targets.length - rows.length;
+      if (rows.length === 0) {
+        setNotifyMessage('이메일이 등록된 미수료 대상자가 없습니다.');
+        return;
+      }
+      const ok = await enqueueMail(rows);
+      if (!ok) {
+        setNotifyMessage('발송 대기열 등록에 실패했습니다.');
+        return;
+      }
+      await logEvent('export', { targetTable: 'training_records', meta: { kind: 'mail_enqueue', count: rows.length, skipped } });
+      setNotifyMessage(`${rows.length}건 발송 대기열 등록${skipped > 0 ? ` (이메일 없음 ${skipped}건 제외)` : ''} (실제 발송은 n8n)`);
+    } finally {
+      setNotifying(false);
+      setTimeout(() => setNotifyMessage(null), 4000);
+    }
+  };
+
+  const openMailQueue = async () => {
+    setMailQueueOpen(true);
+    setMailQueueLoading(true);
+    setMailQueueRows(await listMailQueue(20));
+    setMailQueueLoading(false);
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center py-24 text-sm text-slate-500">불러오는 중...</div>;
   }
 
   return (
     <>
+      {notifyMessage && (
+        <div className="fixed top-4 right-4 z-[60] bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg text-xs font-bold max-w-sm">
+          {notifyMessage}
+        </div>
+      )}
+
       <TrainingManagement
         courses={courseItems}
         records={participantItems}
@@ -283,7 +357,64 @@ export function TrainingPage() {
         onCreateRecordForCourse={openCreateRecordForCourse}
         onEditRecord={openEditRecord}
         onDeleteRecord={handleDeleteRecord}
+        onNotifyUncompleted={handleNotifyUncompleted}
+        onOpenMailQueue={openMailQueue}
       />
+
+      {mailQueueOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">메일 발송 대기열 (최근 20건)</h3>
+              <button type="button" onClick={() => setMailQueueOpen(false)} aria-label="닫기" className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {mailQueueLoading ? (
+              <div className="flex items-center justify-center py-10 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin mr-2" /> 불러오는 중...
+              </div>
+            ) : mailQueueRows.length === 0 ? (
+              <div className="py-10 text-center text-sm text-slate-500">대기열이 비어 있습니다.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b border-slate-200">
+                      <th className="py-2 pr-3 font-bold">수신자</th>
+                      <th className="py-2 pr-3 font-bold">제목</th>
+                      <th className="py-2 pr-3 font-bold">상태</th>
+                      <th className="py-2 pr-3 font-bold">등록일시</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mailQueueRows.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-100">
+                        <td className="py-2 pr-3 text-slate-700">{row.to_email}</td>
+                        <td className="py-2 pr-3 text-slate-700">{row.subject}</td>
+                        <td className="py-2 pr-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              row.status === '발송완료'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : row.status === '실패'
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-slate-500">{new Date(row.created_at).toLocaleString('ko-KR')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {courseFormOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">

@@ -60,9 +60,19 @@ import {
   Layers,
 } from 'lucide-react';
 
-export const PayrollAnalysis: React.FC = () => {
-  const [payrollData] = useState<PayrollMonthlyData[]>(initialPayrollData);
-  const [productivityData] = useState<DepartmentProductivityData[]>(departmentProductivityData);
+interface PayrollAnalysisProps {
+  payrollData?: PayrollMonthlyData[];
+  departmentData?: DepartmentProductivityData[];
+}
+
+export const PayrollAnalysis: React.FC<PayrollAnalysisProps> = ({
+  payrollData: payrollDataProp,
+  departmentData: departmentDataProp,
+}) => {
+  // DB 데이터가 없거나 비어있으면(시드 전) 데모 상수로 안전하게 대체
+  const payrollData = payrollDataProp && payrollDataProp.length > 0 ? payrollDataProp : initialPayrollData;
+  const productivityData =
+    departmentDataProp && departmentDataProp.length > 0 ? departmentDataProp : departmentProductivityData;
   const [highlightMonth, setHighlightMonth] = useState<string>('10월 (예상)');
   const [simulationHeadcount, setSimulationHeadcount] = useState<number>(10);
   const [simulatedAvgSalary, setSimulatedAvgSalary] = useState<number>(5500); // 만원 단위

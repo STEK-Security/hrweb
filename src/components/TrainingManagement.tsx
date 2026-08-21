@@ -26,6 +26,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  Mail,
 } from 'lucide-react';
 
 export interface TrainingManagementProps {
@@ -38,6 +39,10 @@ export interface TrainingManagementProps {
   onCreateRecordForCourse?: (courseId: string) => void;
   onEditRecord?: (recordId: string) => void;
   onDeleteRecord?: (recordId: string) => void;
+  /** 있으면 "미수료자 전원 원클릭 독려 알림 발송" 클릭 시 데모 토스트 대신 이 콜백을 호출한다. */
+  onNotifyUncompleted?: (participants: TrainingParticipant[]) => void;
+  /** 있으면 헤더에 "발송 대기열 확인" 버튼을 노출한다. */
+  onOpenMailQueue?: () => void;
 }
 
 export const TrainingManagement: React.FC<TrainingManagementProps> = ({
@@ -49,6 +54,8 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
   onCreateRecordForCourse,
   onEditRecord,
   onDeleteRecord,
+  onNotifyUncompleted,
+  onOpenMailQueue,
 }) => {
   const [statusFilter, setStatusFilter] = useState<'전체' | '수료' | '미수료' | '진행중'>('전체');
   const [categoryFilter, setCategoryFilter] = useState<string>('전체');
@@ -99,8 +106,12 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
   });
 
   const handleSendReminder = () => {
-    const uncompletedCount = participants.filter((p) => p.status === '미수료').length;
-    setToastMessage(`미수료 대상자(${uncompletedCount}명) 전원에게 사내 메신저 및 이메일 수강 독려 알림이 발송되었습니다.`);
+    const uncompleted = participants.filter((p) => p.status === '미수료');
+    if (onNotifyUncompleted) {
+      onNotifyUncompleted(uncompleted);
+      return;
+    }
+    setToastMessage(`미수료 대상자(${uncompleted.length}명) 전원에게 사내 메신저 및 이메일 수강 독려 알림이 발송되었습니다.`);
     setTimeout(() => setToastMessage(null), 4000);
   };
 
@@ -149,6 +160,17 @@ export const TrainingManagement: React.FC<TrainingManagementProps> = ({
             >
               <Plus className="w-3.5 h-3.5" />
               <span>과정 등록</span>
+            </button>
+          )}
+          {onOpenMailQueue && (
+            <button
+              type="button"
+              id="btn-open-mail-queue"
+              onClick={onOpenMailQueue}
+              className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shadow-xs transition-colors"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>발송 대기열 확인</span>
             </button>
           )}
           <button

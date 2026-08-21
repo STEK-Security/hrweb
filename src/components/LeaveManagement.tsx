@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LeavePersonItem } from '../types';
+import type { ConsultLog } from '../lib/db';
 import {
   UserCheck,
   Clock,
@@ -26,6 +27,14 @@ interface LeaveManagementProps {
   onUpdateLeaveStatus: (id: string, status: LeavePersonItem['status']) => void;
   /** 휴직자 등록 진입점(선택). 전달되면 헤더 버튼 영역에 등록 버튼이 추가된다. */
   onRegisterNew?: () => void;
+  /** 대체인력 매칭 실제 저장(선택). 전달되면 저장이 DB에 반영되고, 미전달 시 임시표시(미저장) 동작 유지. */
+  onSaveSubstitute?: (leaveId: string, name: string) => void;
+  /** 상담일지 실제 저장(선택). 전달되면 저장이 DB에 반영되고, 미전달 시 임시표시(미저장) 동작 유지. */
+  onSaveConsult?: (leaveId: string, note: string) => void;
+  /** 상담일지 모달이 열릴 때 호출(선택). 상위에서 해당 휴직자의 상담이력을 조회해 consultLogs로 내려줄 때 사용. */
+  onOpenConsult?: (leaveId: string) => void;
+  /** 상담일지 모달에 표시할 이력(선택). onOpenConsult로 조회된 목록을 그대로 전달. */
+  consultLogs?: ConsultLog[];
 }
 
 /** 복직예정일이 없으면 dday()가 999 센티넬을 반환한다(LeavePage.toPerson) — 그 경우 '-'로 표기. */
@@ -35,6 +44,10 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
   leavePersons,
   onUpdateLeaveStatus,
   onRegisterNew,
+  onSaveSubstitute,
+  onSaveConsult,
+  onOpenConsult,
+  consultLogs,
 }) => {
   const [activeTab, setActiveTab] = useState<'전체' | '복직예정' | '육아휴직' | '질병휴직' | '기타'>('전체');
   const [searchTerm, setSearchTerm] = useState('');
@@ -95,8 +108,14 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
 
   const handleSaveSubstitute = () => {
     if (!selectedPersonForModal) return;
+    const name = substituteInput || '배치완료';
     setShowAssignSubstituteModal(false);
-    setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${substituteInput || '배치완료'})이 임시 표시(미저장)되었습니다.`);
+    if (onSaveSubstitute) {
+      onSaveSubstitute(selectedPersonForModal.id, name);
+      setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${name})이 저장되었습니다.`);
+    } else {
+      setNotificationMsg(`[${selectedPersonForModal.name}] 대상자의 대체인력(${name})이 임시 표시(미저장)되었습니다.`);
+    }
     setTimeout(() => setNotificationMsg(null), 4000);
   };
 
@@ -104,11 +123,18 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
     setSelectedPersonForModal(person);
     setConsultText('복직 전 사전 상담: 출근 희망일 및 부서 적응 인터뷰 진행 완료.');
     setShowConsultLogModal(true);
+    onOpenConsult?.(person.id);
   };
 
   const handleSaveConsult = () => {
+    if (!selectedPersonForModal) return;
     setShowConsultLogModal(false);
-    setNotificationMsg(`[${selectedPersonForModal?.name}] 사전 복직 상담 일지가 임시 표시(미저장)되었습니다.`);
+    if (onSaveConsult) {
+      onSaveConsult(selectedPersonForModal.id, consultText);
+      setNotificationMsg(`[${selectedPersonForModal.name}] 사전 복직 상담 일지가 저장되었습니다.`);
+    } else {
+      setNotificationMsg(`[${selectedPersonForModal.name}] 사전 복직 상담 일지가 임시 표시(미저장)되었습니다.`);
+    }
     setTimeout(() => setNotificationMsg(null), 4000);
   };
 
@@ -589,6 +615,18 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({
                   복직 예정일: {selectedPersonForModal.expectedReturnDate} ({formatDDay(selectedPersonForModal.dDay)})
                 </p>
               </div>
+
+              {consultLogs && consultLogs.length > 0 && (
+                <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                  <p className="font-bold text-slate-700">이전 상담 이력 ({consultLogs.length}건)</p>
+                  {consultLogs.map((log) => (
+                    <div key={log.id} className="p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                      <p className="text-[10px] text-slate-400">{log.consulted_at}</p>
+                      <p className="text-[11px] text-slate-700 whitespace-pre-wrap">{log.note}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
