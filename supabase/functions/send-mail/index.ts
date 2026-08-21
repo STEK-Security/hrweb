@@ -59,6 +59,55 @@ function jsonResponse(body: unknown, status: number, origin: string | null): Res
   });
 }
 
+// 지정 시간(ms) 내에 promise가 끝나지 않으면 타임아웃 에러로 대체 (SMTP가 워커를 물고 죽는 것 방지)
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 타임아웃 (${ms}ms 초과)`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
+// diag 모드: 실제 발송 없이 SMTP 관련 환경/네트워크 상태만 점검 (각 항목 독립 try/catch, 절대 크래시 금지)
+async function runDiagnostics(): Promise<Record<string, unknown>> {
+  const diag: Record<string, unknown> = {};
+
+  try {
+    diag.env = {
+      host: Deno.env.get("SMTP_HOST"),
+      port: Deno.env.get("SMTP_PORT"),
+      user: Deno.env.get("SMTP_USER"),
+      hasPass: !!Deno.env.get("SMTP_PASS"),
+      sender: Deno.env.get("SMTP_SENDER_NAME"),
+    };
+  } catch (err) {
+    diag.env = { error: err instanceof Error ? err.message : String(err) };
+  }
+
+  try {
+    const host = Deno.env.get("SMTP_HOST");
+    const port = Number(Deno.env.get("SMTP_PORT"));
+    if (!host || !Number.isFinite(port)) {
+      diag.tcp = "SMTP_HOST/SMTP_PORT 미설정 또는 잘못됨";
+    } else {
+      const conn = await withTimeout(Deno.connect({ hostname: host, port }), 8000, "TCP 연결");
+      conn.close();
+      diag.tcp = "ok";
+    }
+  } catch (err) {
+    diag.tcp = err instanceof Error ? err.message : String(err);
+  }
+
+  try {
+    // SMTPClient는 파일 최상단에서 정적 import됨 — import 자체가 성공했다면 여기 도달
+    diag.denomailer_import = typeof SMTPClient === "function" ? "ok" : "SMTPClient 미정의";
+  } catch (err) {
+    diag.denomailer_import = err instanceof Error ? err.message : String(err);
+  }
+
+  return diag;
+}
+
 // env 누락 시 명확한 메시지로 throw (호출부에서 500 처리)
 function getSmtpConfig(): SmtpConfig {
   const hostname = Deno.env.get("SMTP_HOST");
@@ -80,79 +129,102 @@ function getSmtpConfig(): SmtpConfig {
 }
 
 async function sendOne(config: SmtpConfig, mail: MailInput): Promise<void> {
-  const client = new SMTPClient({
-    connection: {
-      hostname: config.hostname,
-      port: config.port,
-      tls: false, // 587: denomailer가 STARTTLS로 자동 업그레이드
-      auth: { username: config.username, password: config.password },
-    },
-  });
+  let client: SMTPClient;
+  try {
+    client = new SMTPClient({
+      connection: {
+        hostname: config.hostname,
+        port: config.port,
+        tls: false, // 587: denomailer가 STARTTLS로 자동 업그레이드
+        auth: { username: config.username, password: config.password },
+      },
+    });
+  } catch (err) {
+    throw new Error(`SMTPClient 생성 실패: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   try {
-    await client.send({
-      from: `${config.senderName} <${config.username}>`,
-      to: mail.to,
-      subject: mail.subject,
-      content: mail.body,
-      html: mail.html,
-    });
+    await withTimeout(
+      client.send({
+        from: `${config.senderName} <${config.username}>`,
+        to: mail.to,
+        subject: mail.subject,
+        content: mail.body,
+        html: mail.html,
+      }),
+      20000,
+      "SMTP 발송",
+    );
+  } catch (err) {
+    throw new Error(`SMTP 발송 실패: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    await client.close();
+    try {
+      await withTimeout(client.close(), 5000, "SMTP 종료");
+    } catch (err) {
+      // close 실패는 발송 결과에 영향 주지 않음 (로그만 남김)
+      console.error("SMTP close 실패:", err);
+    }
   }
 }
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("origin");
 
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
-  }
-  if (req.method !== "POST") {
-    return jsonResponse({ error: "POST만 지원합니다." }, 405, origin);
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !anonKey) {
-    return jsonResponse(
-      { error: "SUPABASE_URL / SUPABASE_ANON_KEY 환경변수가 없습니다." },
-      500,
-      origin,
-    );
-  }
-
-  // 호출자 JWT로 클라이언트를 구성해 is_hr() 재검증 (HR/관리자만 허용)
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const callerClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  const { data: isHr, error: isHrError } = await callerClient.rpc("is_hr");
-  if (isHrError) {
-    return jsonResponse({ error: `권한 확인 실패: ${isHrError.message}` }, 403, origin);
-  }
-  if (!isHr) {
-    return jsonResponse({ error: "HR 권한이 필요합니다." }, 403, origin);
-  }
-
-  let payload: Record<string, unknown>;
+  // 최상위 전면 캡처: 어떤 예외/타임아웃도 밖으로 나가지 않고 반드시 JSON 500으로 반환 (503 방지)
   try {
-    payload = await req.json();
-  } catch {
-    return jsonResponse({ error: "요청 본문이 올바른 JSON이 아닙니다." }, 400, origin);
-  }
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
+    if (req.method !== "POST") {
+      return jsonResponse({ error: "POST만 지원합니다." }, 405, origin);
+    }
 
-  // SMTP 설정은 모든 모드에 공통이므로 여기서 한 번만 확인 (누락 시 명확한 500)
-  let smtpConfig: SmtpConfig;
-  try {
-    smtpConfig = getSmtpConfig();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: message }, 500, origin);
-  }
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !anonKey) {
+      return jsonResponse(
+        { error: "SUPABASE_URL / SUPABASE_ANON_KEY 환경변수가 없습니다." },
+        500,
+        origin,
+      );
+    }
 
-  try {
+    // 호출자 JWT로 클라이언트를 구성해 is_hr() 재검증 (HR/관리자만 허용)
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: isHr, error: isHrError } = await callerClient.rpc("is_hr");
+    if (isHrError) {
+      return jsonResponse({ error: `권한 확인 실패: ${isHrError.message}` }, 403, origin);
+    }
+    if (!isHr) {
+      return jsonResponse({ error: "HR 권한이 필요합니다." }, 403, origin);
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ error: "요청 본문이 올바른 JSON이 아닙니다." }, 400, origin);
+    }
+
+    // 진단 모드: 실제 발송 없이 env/TCP/import 상태만 점검해 반환 (503 원인 확정용)
+    if (payload.diag === true) {
+      const diag = await runDiagnostics();
+      return jsonResponse({ diag }, 200, origin);
+    }
+
+    // SMTP 설정은 모든 모드에 공통이므로 여기서 한 번만 확인 (누락 시 명확한 500)
+    let smtpConfig: SmtpConfig;
+    try {
+      smtpConfig = getSmtpConfig();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return jsonResponse({ error: message }, 500, origin);
+    }
+
     // 모드 1: 큐 발송 — mail_queue 의 '대기' 상태 행을 읽어 발송
     if (payload.mode === "queue") {
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -239,7 +311,8 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse({ sent, failed, results }, 200, origin);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: message }, 500, origin);
+    // 최상위 캐치: 여기서 잡히지 않는 예외는 없어야 함 (503 대신 항상 JSON 500)
+    const stack = err instanceof Error ? err.stack?.slice(0, 500) : undefined;
+    return jsonResponse({ error: String(err), stack }, 500, origin);
   }
 });
