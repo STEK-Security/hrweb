@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { EvaluationSubTab, EvaluationItem } from '../types';
-// TODO(redesign): DB 데이터로 교체 예정
-const initialEvaluations: EvaluationItem[] = [];
+import { EvaluationSubTab, EvaluationItem as EvaluationItemBase } from '../types';
 import {
   Award,
   CheckCircle2,
@@ -15,6 +13,9 @@ import {
   Building,
   TrendingUp,
 } from 'lucide-react';
+
+// DB의 stage는 자유 텍스트이므로 원본 리터럴 유니온을 string으로 완화
+export type EvaluationItem = Omit<EvaluationItemBase, 'stage'> & { stage: string };
 
 interface EvaluationManagementProps {
   evaluations: EvaluationItem[];

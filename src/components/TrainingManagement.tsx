@@ -23,11 +23,33 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
-export const TrainingManagement: React.FC = () => {
-  const [courses, setCourses] = useState<TrainingCourseItem[]>(initialTrainingCourses);
-  const [participants, setParticipants] = useState<TrainingParticipant[]>(initialTrainingParticipants);
+export interface TrainingManagementProps {
+  /** 미전달 시 내부 데모데이터 사용 */
+  courses?: TrainingCourseItem[];
+  records?: TrainingParticipant[];
+  onCreateCourse?: () => void;
+  onEditCourse?: (courseId: string) => void;
+  onDeleteCourse?: (courseId: string) => void;
+  onCreateRecordForCourse?: (courseId: string) => void;
+  onEditRecord?: (recordId: string) => void;
+  onDeleteRecord?: (recordId: string) => void;
+}
+
+export const TrainingManagement: React.FC<TrainingManagementProps> = ({
+  courses = initialTrainingCourses,
+  records: participants = initialTrainingParticipants,
+  onCreateCourse,
+  onEditCourse,
+  onDeleteCourse,
+  onCreateRecordForCourse,
+  onEditRecord,
+  onDeleteRecord,
+}) => {
   const [statusFilter, setStatusFilter] = useState<'전체' | '수료' | '미수료' | '진행중'>('전체');
   const [categoryFilter, setCategoryFilter] = useState<string>('전체');
   const [searchTerm, setSearchTerm] = useState('');
@@ -93,6 +115,17 @@ export const TrainingManagement: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-3">
+          {onCreateCourse && (
+            <button
+              type="button"
+              id="btn-create-training-course"
+              onClick={onCreateCourse}
+              className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>과정 등록</span>
+            </button>
+          )}
           <button
             type="button"
             id="btn-send-training-reminder"
@@ -240,6 +273,9 @@ export const TrainingManagement: React.FC = () => {
                 <th className="px-3.5 py-2.5 text-center">대상/수료</th>
                 <th className="px-3.5 py-2.5 text-center">수료율</th>
                 <th className="px-3.5 py-2.5 text-center">상태</th>
+                {(onEditCourse || onDeleteCourse || onCreateRecordForCourse) && (
+                  <th className="px-3.5 py-2.5 text-center">관리</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -291,6 +327,42 @@ export const TrainingManagement: React.FC = () => {
                         {course.status}
                       </span>
                     </td>
+                    {(onEditCourse || onDeleteCourse || onCreateRecordForCourse) && (
+                      <td className="px-3.5 py-3 text-center">
+                        <div className="flex items-center justify-center space-x-1">
+                          {onCreateRecordForCourse && (
+                            <button
+                              type="button"
+                              aria-label="수료현황 등록"
+                              onClick={() => onCreateRecordForCourse(course.id)}
+                              className="p-1 rounded text-blue-600 hover:bg-blue-50"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {onEditCourse && (
+                            <button
+                              type="button"
+                              aria-label="과정 수정"
+                              onClick={() => onEditCourse(course.id)}
+                              className="p-1 rounded text-slate-600 hover:bg-slate-100"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {onDeleteCourse && (
+                            <button
+                              type="button"
+                              aria-label="과정 삭제"
+                              onClick={() => onDeleteCourse(course.id)}
+                              className="p-1 rounded text-rose-600 hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
             </tbody>
@@ -354,6 +426,9 @@ export const TrainingManagement: React.FC = () => {
                 <th className="px-3.5 py-2.5 text-center">수료 상태</th>
                 <th className="px-3.5 py-2.5">수료 일자</th>
                 <th className="px-3.5 py-2.5 text-center">평가 점수</th>
+                {(onEditRecord || onDeleteRecord) && (
+                  <th className="px-3.5 py-2.5 text-center">관리</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -383,6 +458,32 @@ export const TrainingManagement: React.FC = () => {
                   <td className="px-3.5 py-3 text-center font-bold text-slate-800">
                     {p.score ? `${p.score}점` : '-'}
                   </td>
+                  {(onEditRecord || onDeleteRecord) && (
+                    <td className="px-3.5 py-3 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        {onEditRecord && (
+                          <button
+                            type="button"
+                            aria-label="수료현황 수정"
+                            onClick={() => onEditRecord(p.id)}
+                            className="p-1 rounded text-slate-600 hover:bg-slate-100"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onDeleteRecord && (
+                          <button
+                            type="button"
+                            aria-label="수료현황 삭제"
+                            onClick={() => onDeleteRecord(p.id)}
+                            className="p-1 rounded text-rose-600 hover:bg-rose-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
