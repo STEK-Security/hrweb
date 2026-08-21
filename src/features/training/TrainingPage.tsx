@@ -15,7 +15,7 @@ import {
   deleteTrainingRecord,
   enqueueMail,
   listMailQueue,
-  revealField,
+  getSensitiveMasked,
   type Employee,
   type TrainingCourse,
   type TrainingRecord,
@@ -296,7 +296,8 @@ export function TrainingPage() {
           targets.map(async (r) => {
             const emp = empMap.get(r.employee_id);
             if (!emp) return null;
-            const email = await revealField(r.employee_id, 'email');
+            const masked = await getSensitiveMasked(r.employee_id);
+            const email = masked?.email as string | undefined;
             if (!email) return null;
             const course = courseMap.get(r.course_id);
             return {
