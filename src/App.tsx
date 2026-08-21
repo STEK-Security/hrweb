@@ -16,6 +16,7 @@ import { DataQualityPage } from './features/quality/DataQualityPage';
 import { TransfersPage } from './features/transfers/TransfersPage';
 import { CalendarPage } from './features/calendar/CalendarPage';
 import { TrainingPage } from './features/training/TrainingPage';
+import { MailPage } from './features/mail/MailPage';
 import { EvaluationPage } from './features/evaluation/EvaluationPage';
 import { PayrollPlaceholderPage } from './features/payroll/PayrollPlaceholderPage';
 import { EmployeeDrawer } from './features/roster/EmployeeDrawer';
@@ -97,6 +98,8 @@ export default function App() {
           <TransfersPage />
         ) : activeMenu === '캘린더' ? (
           <CalendarPage />
+        ) : activeMenu === '메일발송' ? (
+          <MailPage />
         ) : activeMenu === '교육관리' ? (
           <TrainingPage />
         ) : activeMenu === '평가관리' ? (

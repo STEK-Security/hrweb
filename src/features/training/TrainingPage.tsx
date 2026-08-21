@@ -21,6 +21,7 @@ import {
   type TrainingRecord,
   type MailQueueRow,
 } from '../../lib/db';
+import { flushMailQueue } from '../../lib/mail';
 import { logEvent } from '../../lib/audit';
 import { EmployeePicker } from '../../components/EmployeePicker';
 import { TrainingManagement } from '../../components/TrainingManagement';
@@ -323,7 +324,12 @@ export function TrainingPage() {
         return;
       }
       await logEvent('export', { targetTable: 'training_records', meta: { kind: 'mail_enqueue', count: rows.length, skipped } });
-      setNotifyMessage(`${rows.length}건 발송 대기열 등록${skipped > 0 ? ` (이메일 없음 ${skipped}건 제외)` : ''} (실제 발송은 n8n)`);
+      const flushed = await flushMailQueue();
+      if (flushed.ok && flushed.sent) {
+        setNotifyMessage(`${flushed.sent}건 발송 완료${skipped > 0 ? ` (이메일 없음 ${skipped}건 제외)` : ''}`);
+      } else {
+        setNotifyMessage(`${rows.length}건 발송 대기열 등록${skipped > 0 ? ` (이메일 없음 ${skipped}건 제외)` : ''} (실발송 실패, 나중에 재발송 가능)`);
+      }
     } finally {
       setNotifying(false);
       setTimeout(() => setNotifyMessage(null), 4000);
