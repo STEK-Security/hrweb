@@ -1,7 +1,7 @@
 -- APPLY_EXPANSION_2.sql
 -- 전제: APPLY_ALL.sql(0001~0010) + APPLY_EXPANSION.sql(0011~0014) 이 이미 적용되어 있다.
--- 이 파일은 그 이후 확장분(0015~0019) 전체를 한 번에 반영한다 — Studio SQL 편집기에
--- 이 파일 전체를 그대로 복붙해 실행하면 된다.
+-- 이 파일은 그 이후 확장분(0015~0021, 관리자·보안 포함) 전체를 한 번에 반영한다 — Studio SQL
+-- 편집기에 이 파일 전체를 그대로 복붙해 실행하면 된다.
 --
 -- 모든 문장이 IF EXISTS/IF NOT EXISTS/CREATE OR REPLACE 기반이라 재실행해도 안전하다.
 -- 구성(순서 고정):
@@ -9,9 +9,12 @@
 --   (b) 0016: 인사발령이력 employee_transfers 신규 테이블 + RLS + log_event action 추가
 --   (c) 0017: HR캘린더 hr_events/hr_checklists 신규 테이블 + RLS + log_event action 추가
 --   (d) 0018: 교육관리 training_courses/training_records 신규 테이블 + RLS + log_event action 추가
---   (e) 0019: 평가관리 evaluations 신규 테이블 + RLS + log_event action 추가(최종본)
+--   (e) 0019: 평가관리 evaluations 신규 테이블 + RLS + log_event action 추가
+--   (f) 0020: 관리자 화면(계정·역할관리, 조직설정) 지원 — 컬럼 grant 확장 + log_event 화이트리스트 추가
+--   (g) 0021: 보안하드닝 — 비활성계정 서버측차단(P0), enabled 자기수정방지(P0),
+--             audit 직접insert 회수(P1), 마지막관리자/본인역할 서버측차단(P2)(최종본)
 --
--- 개별 0015~0019/hotfix_0015~0019 파일은 그대로 남아있다(파일 단위로 하나씩 적용하고 싶을 때 사용).
+-- 개별 0015~0021/hotfix_0015~0020 파일은 그대로 남아있다(파일 단위로 하나씩 적용하고 싶을 때 사용).
 
 -- ============================================================
 -- (0015_certificate_audit)
@@ -456,7 +459,7 @@ create policy "evaluations hr all" on public.evaluations
 
 create index if not exists evaluations_employee_id_idx on public.evaluations (employee_id);
 
--- log_event 화이트리스트에 평가관리 action 추가(누적 재정의, 최종본).
+-- log_event 화이트리스트에 평가관리 action 추가(누적 재정의).
 create or replace function public.log_event(
   p_action text,
   p_target_id uuid default null,
@@ -522,4 +525,133 @@ alter function public.log_event(text, uuid, text, jsonb) owner to postgres;
 
 revoke execute on function public.log_event(text, uuid, text, jsonb) from public;
 grant execute on function public.log_event(text, uuid, text, jsonb) to authenticated, anon;
+
+-- ============================================================
+-- (0020_admin)
+-- ============================================================
+
+-- 0020_admin.sql
+-- 관리자 화면(T12.1 계정·역할관리, T12.2 조직설정) 지원.
+-- RLS 정책("profiles admin all"/"roles admin all"/"settings admin write")은 이미 관리자만 write 를
+-- 통과시키므로, 여기서는 컬럼 grant 확장(누락돼있던 profiles.enabled/user_roles.role write 권한)과
+-- log_event 화이트리스트 추가만 한다.
+
+-- profiles.enabled 는 지금까지 grant update 대상이 아니었다(0002 는 name/dept/team 만 허용).
+grant update (enabled) on public.profiles to authenticated;
+
+-- user_roles 는 지금까지 select 만 grant 돼 있었다(0001). role 변경은 관리자만 RLS 로 통과.
+grant update (role, updated_by, updated_at) on public.user_roles to authenticated;
+
+-- log_event 화이트리스트에 계정·설정 관리 action 추가(누적 재정의).
+create or replace function public.log_event(
+  p_action text,
+  p_target_id uuid default null,
+  p_target_table text default null,
+  p_meta jsonb default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_headers jsonb;
+  v_ip inet;
+  v_ua text;
+  v_actor_email text;
+begin
+  if p_action not in (
+    'login_success','login_fail','logout','view_screen','view_employee',
+    'create_employee','update_employee','delete_employee',
+    'create_leave','update_leave','export','reveal','read_ssn_full','role_change',
+    'issue_certificate',
+    'create_transfer','update_transfer','delete_transfer',
+    'create_event','update_event','delete_event',
+    'create_checklist','update_checklist','delete_checklist',
+    'create_training_course','update_training_course','delete_training_course',
+    'create_training_record','update_training_record','delete_training_record',
+    'create_evaluation','update_evaluation','delete_evaluation',
+    'toggle_account','update_settings'
+  ) then
+    raise exception 'invalid action';
+  end if;
+
+  if v_actor is null and p_action not in ('login_success','login_fail') then
+    raise exception 'forbidden';
+  end if;
+
+  begin
+    v_headers := current_setting('request.headers', true)::jsonb;
+  exception when others then
+    v_headers := null;
+  end;
+
+  if v_headers is not null then
+    v_ua := v_headers ->> 'user-agent';
+    begin
+      v_ip := split_part(v_headers ->> 'x-forwarded-for', ',', 1)::inet;
+    exception when others then
+      v_ip := null;
+    end;
+  end if;
+
+  v_actor_email := p_meta ->> 'email';
+
+  insert into public.audit_log
+    (actor, action, target_id, target_table, meta, ip, user_agent, actor_email)
+  values
+    (v_actor, p_action, p_target_id, p_target_table, p_meta, v_ip, v_ua, v_actor_email);
+end;
+$$;
+
+alter function public.log_event(text, uuid, text, jsonb) owner to postgres;
+
+revoke execute on function public.log_event(text, uuid, text, jsonb) from public;
+grant execute on function public.log_event(text, uuid, text, jsonb) to authenticated, anon;
+
+-- ============================================================
+-- (0021_security_hardening)
+-- ============================================================
+
+-- 0021_security_hardening.sql : 비활성계정 서버측차단(P0), enabled 자기수정방지(P0), audit 직접insert 회수(P1), 마지막관리자/본인역할 서버측차단(P2)
+create or replace function public.current_role()
+returns text language sql security definer set search_path = public stable as $$
+  select ur.role from public.user_roles ur
+  join public.profiles p on p.id = ur.user_id
+  where ur.user_id = auth.uid() and p.enabled = true
+$$;
+alter function public.current_role() owner to postgres;
+
+create or replace function public.guard_profile_enabled()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.enabled is distinct from old.enabled and not public.is_admin() then
+    raise exception 'forbidden: enabled is admin-only';
+  end if;
+  return new;
+end $$;
+alter function public.guard_profile_enabled() owner to postgres;
+drop trigger if exists profiles_guard_enabled on public.profiles;
+create trigger profiles_guard_enabled before update on public.profiles
+  for each row execute function public.guard_profile_enabled();
+
+revoke insert on public.audit_log from authenticated;
+
+create or replace function public.guard_admin_roles()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.user_id = auth.uid() and new.role is distinct from old.role then
+    raise exception 'cannot change own role';
+  end if;
+  if old.role = '관리자' and new.role <> '관리자'
+     and (select count(*) from public.user_roles where role = '관리자') <= 1 then
+    raise exception 'cannot demote the last admin';
+  end if;
+  return new;
+end $$;
+alter function public.guard_admin_roles() owner to postgres;
+drop trigger if exists user_roles_guard on public.user_roles;
+create trigger user_roles_guard before update on public.user_roles
+  for each row execute function public.guard_admin_roles();
 
