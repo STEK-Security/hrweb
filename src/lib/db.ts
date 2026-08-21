@@ -53,6 +53,86 @@ export interface ProfileLite {
   name: string | null;
 }
 
+export interface TransferRecord {
+  id: string;
+  employee_id: string;
+  transfer_date: string;
+  transfer_type: string;
+  prev_org: string | null;
+  new_org: string | null;
+  prev_position: string | null;
+  new_position: string | null;
+  order_title: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface HrEvent {
+  id: string;
+  title: string;
+  event_date: string;
+  end_date: string | null;
+  category: string | null;
+  location: string | null;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface HrChecklistItem {
+  id: string;
+  title: string;
+  category: string | null;
+  due_date: string | null;
+  completed: boolean;
+  assignee: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface TrainingCourse {
+  id: string;
+  title: string;
+  category: string | null;
+  target_count: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  instructor: string | null;
+  status: string | null;
+  mandatory: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface TrainingRecord {
+  id: string;
+  course_id: string;
+  employee_id: string;
+  status: '수료' | '미수료' | '진행중';
+  completed_date: string | null;
+  score: number | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface EvaluationRecord {
+  id: string;
+  employee_id: string;
+  type: '수습' | '역량' | '성과';
+  evaluator: string | null;
+  stage: string | null;
+  status: '진행중' | '완료' | '미작성';
+  due_date: string | null;
+  self_score: number | null;
+  manager_score: number | null;
+  final_grade: string | null;
+  feedback: string | null;
+  submitted_date: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 /** employees 전체 조회(soft delete 된 행 제외) → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
@@ -192,4 +272,200 @@ export async function listProfiles(): Promise<ProfileLite[]> {
   const { data, error } = await supabase.from('profiles').select('id,email,name');
   if (error || !data) return [];
   return data as ProfileLite[];
+}
+
+/** 인사발령이력 조회. employeeId 지정 시 해당 직원만, 발령일 내림차순. */
+export async function listTransfers(employeeId?: string): Promise<TransferRecord[]> {
+  if (!supabase) return [];
+  let query = supabase.from('employee_transfers').select('*').order('transfer_date', { ascending: false });
+  if (employeeId) query = query.eq('employee_id', employeeId);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as TransferRecord[];
+}
+
+export async function createTransfer(
+  fields: Omit<TransferRecord, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('employee_transfers').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateTransfer(
+  id: string,
+  fields: Partial<Omit<TransferRecord, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employee_transfers').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteTransfer(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('employee_transfers').delete().eq('id', id);
+  return !error;
+}
+
+/** HR캘린더 일정 조회. */
+export async function listHrEvents(): Promise<HrEvent[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('hr_events').select('*').order('event_date', { ascending: true });
+  if (error || !data) return [];
+  return data as HrEvent[];
+}
+
+export async function createHrEvent(
+  fields: Omit<HrEvent, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('hr_events').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateHrEvent(
+  id: string,
+  fields: Partial<Omit<HrEvent, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('hr_events').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteHrEvent(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('hr_events').delete().eq('id', id);
+  return !error;
+}
+
+/** HR캘린더 체크리스트 조회. */
+export async function listHrChecklists(): Promise<HrChecklistItem[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('hr_checklists').select('*').order('due_date', { ascending: true });
+  if (error || !data) return [];
+  return data as HrChecklistItem[];
+}
+
+export async function createHrChecklist(
+  fields: Omit<HrChecklistItem, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('hr_checklists').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateHrChecklist(
+  id: string,
+  fields: Partial<Omit<HrChecklistItem, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('hr_checklists').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteHrChecklist(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('hr_checklists').delete().eq('id', id);
+  return !error;
+}
+
+/** 교육 과정 조회. */
+export async function listTrainingCourses(): Promise<TrainingCourse[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('training_courses').select('*').order('start_date', { ascending: false });
+  if (error || !data) return [];
+  return data as TrainingCourse[];
+}
+
+export async function createTrainingCourse(
+  fields: Omit<TrainingCourse, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('training_courses').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateTrainingCourse(
+  id: string,
+  fields: Partial<Omit<TrainingCourse, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('training_courses').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteTrainingCourse(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('training_courses').delete().eq('id', id);
+  return !error;
+}
+
+/** 교육 수료현황 조회. courseId 지정 시 해당 과정만. */
+export async function listTrainingRecords(courseId?: string): Promise<TrainingRecord[]> {
+  if (!supabase) return [];
+  let query = supabase.from('training_records').select('*').order('created_at', { ascending: false });
+  if (courseId) query = query.eq('course_id', courseId);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as TrainingRecord[];
+}
+
+export async function createTrainingRecord(
+  fields: Omit<TrainingRecord, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('training_records').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateTrainingRecord(
+  id: string,
+  fields: Partial<Omit<TrainingRecord, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('training_records').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteTrainingRecord(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('training_records').delete().eq('id', id);
+  return !error;
+}
+
+/** 평가 조회. */
+export async function listEvaluations(): Promise<EvaluationRecord[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('evaluations').select('*').order('due_date', { ascending: true });
+  if (error || !data) return [];
+  return data as EvaluationRecord[];
+}
+
+export async function createEvaluation(
+  fields: Omit<EvaluationRecord, 'id' | 'created_by' | 'created_at'>
+): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('evaluations').insert(fields).select('id').single();
+  if (error || !data) return null;
+  return data.id as string;
+}
+
+export async function updateEvaluation(
+  id: string,
+  fields: Partial<Omit<EvaluationRecord, 'id' | 'created_by' | 'created_at'>>
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('evaluations').update(fields).eq('id', id);
+  return !error;
+}
+
+export async function deleteEvaluation(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from('evaluations').delete().eq('id', id);
+  return !error;
 }

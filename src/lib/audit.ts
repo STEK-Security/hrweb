@@ -20,7 +20,25 @@ export type AuditAction =
   | 'reveal'
   | 'read_ssn_full'
   | 'role_change'
-  | 'issue_certificate';
+  | 'issue_certificate'
+  | 'create_transfer'
+  | 'update_transfer'
+  | 'delete_transfer'
+  | 'create_event'
+  | 'update_event'
+  | 'delete_event'
+  | 'create_checklist'
+  | 'update_checklist'
+  | 'delete_checklist'
+  | 'create_training_course'
+  | 'update_training_course'
+  | 'delete_training_course'
+  | 'create_training_record'
+  | 'update_training_record'
+  | 'delete_training_record'
+  | 'create_evaluation'
+  | 'update_evaluation'
+  | 'delete_evaluation';
 
 export interface LogEventOptions {
   targetId?: string | null;
