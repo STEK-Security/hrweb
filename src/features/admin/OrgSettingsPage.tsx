@@ -12,6 +12,7 @@ const KEY_LABELS: Record<string, string> = {
   probation_days: '수습평가 기준일(1차/최종, 일)',
   retire_age: '정년(세)',
   exclude_pattern: '명부 제외 패턴',
+  field_grades: '현장직 직급 목록(이 직급만 현장직으로 집계)',
   org_name_map: '소속명 치환 매핑',
   employee_input_enabled: '직원 직접입력 기능',
   leave_input_enabled: '휴직 직접입력 기능',

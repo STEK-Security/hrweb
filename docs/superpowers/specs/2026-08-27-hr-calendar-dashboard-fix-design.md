@@ -1,7 +1,7 @@
 # HR캘린더·대시보드 오류 수정 및 분류기준 재정의 설계
 
 - 작성일: 2026-08-27
-- 상태: 승인됨 (사용자 승인 2026-08-27)
+- 상태: 구현 완료 (승인 2026-08-27 / 구현 2026-08-27)
 - 대상 코드: `/home/stek/stek/hr` (react + vite + supabase)
 
 ## 1. 배경
@@ -304,20 +304,49 @@ Supabase
 - 대시보드 이외 화면(`DiversityPage`, `OrgChartPage`, `RosterPage`)의 기준일 지원 — 현재 요청 범위는 대시보드
 - 기존 브라우저 E2E 스크립트(`test/e2e.js`·`asof.js`·`rules.js`)가 엑셀 업로드 시절 UI를 전제해 현재 화면에서 동작하지 않는 문제
 
+## 8.5 구현 중 추가로 발견·수정한 것 (2026-08-27 구현 완료)
+
+설계 후 실제 구현·테스트에서 드러난 것들이다.
+
+1. **`_activeNow` 가 입사일을 보지 않았다** — `!quit || quit > TODAY` 라서 과거 기준일 스냅샷에서
+   **아직 입사하지 않은 사람이 재직자로 집계**됐다(오늘 기준으로도 입사예정자가 총원에 포함).
+   KPI 카드의 `headcountAsOf()` 는 입사일을 보므로 두 값이 서로 어긋났다.
+   → `(!hire || hire <= TODAY) && (!quit || quit > TODAY)` 로 수정. `test/unit/derive.ts` 가 잡아낸 회귀다.
+2. **`src/lib/stats.ts` 신설(설계에 없던 파일)** — 순수 집계 함수가 `DashboardPage.tsx` 안에 있어
+   ① 인력현황·구성다양성 페이지가 대시보드 페이지를 import 하는 구조였고 ② JSX 없이 테스트할 수 없었다.
+   순수 계산만 이 파일로 옮기고 세 페이지가 함께 쓴다.
+3. **`DashboardPage.tsx` 에 NUL 바이트가 있었다** — `buildMatrixRows` 가 그룹 키 구분자로 제어문자를
+   소스에 직접 박아 파일이 바이너리로 취급되어 grep 결과에서 조용히 누락됐다(런타임은 정상).
+   `'\u001F'` 이스케이프로 교체.
+4. **막대 그래프 스케일 하드코딩** — 직급/부서 분포 막대 폭이 `count/240`, `count/200` 고정 분모였다.
+   부서 집계가 본부(5개)→부서(15개)로 바뀌며 항목당 인원이 작아져 막대가 사실상 보이지 않게 되므로
+   최대값 기준 정규화(`barPct`)로 교체하고, 부서 목록에 `max-h-72 overflow-y-auto` 를 씌웠다.
+5. **테스트 파일명** — 설계의 `test/unit/dashboard.ts` → 실제 `test/unit/stats.ts`(대상 모듈명과 일치).
+6. **현장직 하위분류 '기타'** — 현장직 판정이 직급 기준이 되면서 생산/품질/물류 정규식에 걸리지 않는
+   현장직(예: 설비기술팀)이 드릴다운에서 사라져 총원과 합계가 어긋났다. '기타 현장직' 버킷을 추가하고
+   인원 0인 카테고리는 감춘다.
+
+**검증 결과**: `npm run lint`(tsc) 통과, `npm run build` 통과, `npm run test:unit` 17개 검증 통과,
+데모 시드 0026/0027 을 실제 PostgreSQL 16 에 적용해 총원 250 / 재직 120 / 퇴직 130,
+직군 현장직 46·사무직 74, 부서 15개(생산관리팀 22명 최다), 휴직 11건 확인.
+
 ## 9. 변경 파일 요약
 
 | 파일 | 구분 | 내용 |
 |---|---|---|
 | `src/lib/autoEvents.ts` | 신규 | 자동일정 생성 단일 소스(생일 제외, 재직기간 가드) |
 | `test/unit/autoEvents.ts` | 신규 | 위 1~5 (tsx + node:assert) |
-| `src/excel/derive.ts` | 수정 | `officeType` 직급 기반 교체, `FIELD_GRADES`, `deriveAllAsOf` 추가 |
+| `src/excel/derive.ts` | 수정 | `officeType` 직급 기반 교체, `FIELD_GRADES`, `deriveAllAsOf`, `_activeNow` 입사일 조건 |
 | `test/unit/derive.ts` | 신규 | 위 6~9 |
 | `src/features/calendar/CalendarPage.tsx` | 수정 | 자체 `buildAutoEvents` 삭제 → 공통 함수 호출 |
-| `src/features/dashboard/DashboardPage.tsx` | 수정 | `listHrEvents` 병합, `asOfDate` 소유, 스냅샷 재파생, 부서=팀, `onLeaveAsOf` |
-| `test/unit/dashboard.ts` | 신규 | 위 10~11 |
+| `src/lib/stats.ts` | 신규 | 순수 집계 함수 분리(부서=팀, `onLeaveAsOf`, 기준일 인자) |
+| `src/features/dashboard/DashboardPage.tsx` | 수정 | `listHrEvents` 병합, `asOfDate` 소유, 스냅샷 재파생, NUL 바이트 제거 |
+| `test/unit/stats.ts` | 신규 | 위 10~11 + 집계표 구분자 |
 | `package.json` | 수정 | `test:unit` 스크립트 1줄 |
-| `src/components/DashboardOverview.tsx` | 수정 | `asOfDate` controlled 전환 |
-| `src/features/headcount/HeadcountPage.tsx` | 수정 | 현장직 하위분류(생산/물류) 팀명 기준 유지 확인 |
+| `src/components/DashboardOverview.tsx` | 수정 | `asOfDate` controlled 전환, 막대 스케일 정규화, 부서목록 스크롤 |
+| `src/features/headcount/HeadcountPage.tsx` | 수정 | 하위분류 팀명 기준 유지 + '기타 현장직' 버킷 |
+| `src/features/diversity/DiversityPage.tsx` | 수정 | 집계 함수 import 경로를 `lib/stats` 로 |
+| `src/lib/db.ts` | 수정 | `ensureFieldGrades()` — org_settings 1회 로드 |
 | `src/features/admin/OrgSettingsPage.tsx` | 수정 | `field_grades` 라벨 1줄 |
 | `supabase/migrations/0027_settings_field_grades.sql` | 신규 | `org_settings.field_grades` 기본값 |
 | `scripts/gen_demo_employees.py` | 수정 | 생산본부 직급을 현장직 3직급으로, assert 추가 |

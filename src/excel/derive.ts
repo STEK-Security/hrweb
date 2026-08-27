@@ -87,11 +87,31 @@ export const RETIRE_AGE = 60;
 /* ============================================================
    조직 규칙 (운영자 지정)
    ============================================================ */
-/** 생산 부문 = 생산팀 + 품질팀 + 물류팀 */
+/**
+ * 생산 부문 = 생산팀 + 품질팀 + 물류팀.
+ * 현장직 "하위 분류"(생산직/물류직) 전용이다 — 현장직 판정에는 더 이상 쓰지 않는다.
+ */
 export const PRODUCTION_RE = /생산|품질|물류/;
-/** 현장직 판정: 소속이 생산·품질·물류인 경우만 */
-const officeType = (team: string, div: string): '사무직' | '현장직' =>
-  PRODUCTION_RE.test(`${team} ${div}`) ? '현장직' : '사무직';
+
+/**
+ * 그룹웨어 직급 개편(2026-08) 기준 현장직 직급.
+ * 이 직급인 사람만 현장직으로 카운트하고 나머지는 전부 사무직이다(소속명과 무관).
+ * org_settings.field_grades 로 덮어쓸 수 있다(setFieldGrades) — 미설정/조회실패 시 이 기본값.
+ */
+export const DEFAULT_FIELD_GRADES = ['사원(기능)', '리더', '책임'];
+let FIELD_GRADES = new Set(DEFAULT_FIELD_GRADES);
+
+/** org_settings.field_grades 적용(빈 값이면 기본값으로 되돌린다) */
+export const setFieldGrades = (list?: string[] | null) => {
+  const cleaned = (list ?? []).map((s) => String(s).trim()).filter(Boolean);
+  FIELD_GRADES = new Set(cleaned.length ? cleaned : DEFAULT_FIELD_GRADES);
+};
+/** 현재 적용 중인 현장직 직급 목록(표시·테스트용) */
+export const fieldGrades = () => [...FIELD_GRADES];
+
+/** 현장직 판정: 직급이 현장직 직급 목록에 있을 때만. */
+const officeType = (grade: string): '사무직' | '현장직' =>
+  FIELD_GRADES.has(grade.trim()) ? '현장직' : '사무직';
 
 /** 법인·조직명 표기 통일 — '총괄' 은 TBS 로 표기한다 */
 export const normalizeOrg = (v: string): string =>
@@ -119,7 +139,9 @@ export function derive(raw: RawRow, i: number): Employee {
   r._name = g('성명') || '(무명)';
   r._retired = !!quit && quit <= TODAY;
   r._pending = !!quit && quit > TODAY;
-  r._activeNow = !quit || quit > TODAY;
+  // 기준일 현재 재직 = 입사했고(입사일 ≤ 기준일) 아직 퇴직 전(퇴직일 > 기준일).
+  // 입사일 조건이 없으면 과거 기준일 스냅샷에서 미입사자가 재직으로 집계된다.
+  r._activeNow = (!hire || hire <= TODAY) && (!quit || quit > TODAY);
   r._age = g('나이(만)') != null ? Number(g('나이(만)')) : birth ? Math.floor(days(birth, TODAY) / 365.25) : null;
   r._ageBand = ageBand(r._age);
   r._sex = g('성별') || '미상';
@@ -136,7 +158,7 @@ export function derive(raw: RawRow, i: number): Employee {
   r._grade = g('직급') || '미지정';
   r._title = g('직책') || '미지정';
   r._edu = g('학력') || '미상';
-  r._office = officeType(r._team, r._div);
+  r._office = officeType(r._grade);
 
   r._hireDate = hire ? localISO(hire) : null;
   r._quitDate = quit ? localISO(quit) : null;
@@ -173,6 +195,20 @@ export function derive(raw: RawRow, i: number): Employee {
 export function deriveAll(rows: RawRow[]): Employee[] {
   return rows.filter((r) => !isExcludedRow(r)).map(derive);
 }
+/**
+ * 기준일(asOf)을 적용해 파생필드를 다시 계산한다. 전역 기준일은 호출 전 값으로 복원된다.
+ * Employee = RawRow & Derived 이므로 이미 파생된 배열을 그대로 넘겨도 된다(추가 DB 조회 불필요).
+ */
+export function deriveAllAsOf(rows: RawRow[], asOf: string): Employee[] {
+  const prev = localISO(today());
+  setToday(asOf);
+  try {
+    return deriveAll(rows);
+  } finally {
+    setToday(prev);
+  }
+}
+
 /** 제외된 행 수 */
 export const countExcluded = (rows: RawRow[]) => rows.filter(isExcludedRow).length;
 

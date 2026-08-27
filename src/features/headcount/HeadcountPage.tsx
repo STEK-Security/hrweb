@@ -13,7 +13,7 @@ import {
   buildJobTypeRatio,
   groupBy,
   pct,
-} from '../dashboard/DashboardPage';
+} from '../../lib/stats';
 import type { RatioData } from '../../types';
 
 const TENURE_BAND_ORDER = ['1년 미만', '1~3년', '3~5년', '5~10년', '10년 이상'];
@@ -27,15 +27,25 @@ function buildTenureBandRatio(active: Employee[]): RatioData[] {
   });
 }
 
-/** 현장직을 생산직/물류직으로 나누고 팀별 인원·리더를 집계한다. */
+/**
+ * 현장직을 생산직/물류직으로 나누고 팀별 인원·리더를 집계한다.
+ * 현장직 판정 자체는 직급 기준(derive.ts officeType)이고, 여기서의 생산/물류 구분만 소속명 기준이다.
+ * 두 정규식에 걸리지 않는 현장직(예: 설비기술팀)은 '기타'로 모아 총원과 합계가 어긋나지 않게 한다.
+ */
 function buildFieldWorkDrilldown(active: Employee[]): FieldWorkDrilldown {
   const field = active.filter((e) => e._office === '현장직');
-  const cats: { id: 'prod' | 'logistics'; name: string; re: RegExp }[] = [
+  const cats: { id: string; name: string; re: RegExp }[] = [
     { id: 'prod', name: '생산직', re: /생산|품질/ },
     { id: 'logistics', name: '물류직', re: /물류/ },
+    { id: 'etc', name: '기타 현장직', re: /(?!)/ }, // 아래에서 미분류 인원을 채운다
   ];
+  const classified = new Set<Employee>();
   const categories = cats.map((cat) => {
-    const members = field.filter((e) => cat.re.test(`${e._team} ${e._div}`));
+    const members =
+      cat.id === 'etc'
+        ? field.filter((e) => !classified.has(e))
+        : field.filter((e) => cat.re.test(`${e._team} ${e._div}`));
+    members.forEach((e) => classified.add(e));
     const byTeam = groupBy(members.filter((e) => isRealOrg(e._team)), (e) => e._team);
     const teams = Object.entries(byTeam)
       .sort((a, b) => b[1].length - a[1].length)
@@ -48,7 +58,7 @@ function buildFieldWorkDrilldown(active: Employee[]): FieldWorkDrilldown {
       }));
     return { id: cat.id, name: cat.name, totalCount: members.length, teams, recentTrend: '' };
   });
-  return { total: field.length, categories };
+  return { total: field.length, categories: categories.filter((c) => c.totalCount > 0) };
 }
 
 function buildEmploymentBreakdown(active: Employee[], leaveOfAbsenceCount: number) {

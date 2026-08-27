@@ -9,7 +9,8 @@
     "build:single": "vite build && node scripts/inline.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:unit": "tsx test/unit/derive.ts && tsx test/unit/autoEvents.ts && tsx test/unit/stats.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

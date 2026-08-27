@@ -5,7 +5,7 @@
  */
 import { supabase } from './supabase';
 import type { RawRow } from '../excel/parse';
-import { deriveAll, derive, type Employee } from '../excel/derive';
+import { deriveAll, derive, setFieldGrades, type Employee } from '../excel/derive';
 
 export type { Employee };
 
@@ -133,9 +133,32 @@ export interface EvaluationRecord {
   created_at: string;
 }
 
+/**
+ * org_settings.field_grades(현장직 직급 목록)를 1회만 읽어 derive.ts 에 적용한다.
+ * 조회 실패/미설정이면 derive.ts 의 기본값(DEFAULT_FIELD_GRADES)이 그대로 쓰인다.
+ * org_settings 는 authenticated 전원 select 허용(0008)이라 사용자별로 분류가 갈리지 않는다.
+ */
+let fieldGradesOnce: Promise<void> | null = null;
+export function ensureFieldGrades(): Promise<void> {
+  if (!fieldGradesOnce) {
+    fieldGradesOnce = (async () => {
+      if (!supabase) return;
+      const { data } = await supabase
+        .from('org_settings')
+        .select('value')
+        .eq('key', 'field_grades')
+        .maybeSingle();
+      const v = (data as { value?: unknown } | null)?.value;
+      if (Array.isArray(v)) setFieldGrades(v as string[]);
+    })().catch(() => undefined);
+  }
+  return fieldGradesOnce;
+}
+
 /** employees 전체 조회(soft delete 된 행 제외) → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
+  await ensureFieldGrades();
   const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
   if (error || !data) return [];
   return deriveAll(data as RawRow[]);
@@ -144,6 +167,7 @@ export async function listEmployees(): Promise<Employee[]> {
 /** 단일 직원 조회(파생필드 포함, soft delete 된 행 제외). 없으면 null. */
 export async function getEmployee(id: string): Promise<Employee | null> {
   if (!supabase) return null;
+  await ensureFieldGrades();
   const { data, error } = await supabase
     .from('employees')
     .select('*')

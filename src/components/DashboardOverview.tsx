@@ -54,6 +54,9 @@ interface DashboardOverviewProps {
   positionDistributionData?: { name: string; count: number; percentage: number; color: string }[];
   departmentDistributionData?: { name: string; count: number; percentage: number; fillRate: number }[];
   tenureByDepartment?: { department: string; avgYears: number; earlyTurnoverRate: number }[];
+  /** 기준일(ISO yyyy-mm-dd). 상위(DashboardPage)가 소유한다 — 이 값이 바뀌면 상위가 모든 집계를 재계산한다. */
+  asOfDate?: string;
+  onChangeAsOfDate?: (iso: string) => void;
   employeeRecords?: { hireDate: string | null; quitDate: string | null }[];
 }
 
@@ -72,13 +75,17 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   positionDistributionData = [],
   departmentDistributionData = [],
   tenureByDepartment = [],
+  asOfDate: asOfDateProp,
+  onChangeAsOfDate,
   employeeRecords = [],
 }) => {
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const corpNames = [...new Set(matrixRows.map((r) => r.corporation))];
 
-  const [asOfDate, setAsOfDate] = useState<string>(todayDateStr);
+  // 기준일은 상위가 소유한다. prop 미지정(구 호출부 호환) 시에만 오늘로 고정.
+  const asOfDate = asOfDateProp ?? todayDateStr;
+  const setAsOfDate = (iso: string) => onChangeAsOfDate?.(iso);
   const [selectedDay, setSelectedDay] = useState<number>(today.getDate());
   const [tableFilter, setTableFilter] = useState<string>(
     selectedCorp && corpNames.includes(selectedCorp) ? selectedCorp : '전체'
@@ -230,6 +237,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     },
     { male: 0, female: 0, domestic: 0, foreign: 0, leave: 0, total: 0 }
   );
+
+  // 막대 길이는 최대값 기준으로 정규화한다(총원 하드코딩 스케일이던 240/200 대체).
+  // 부서 집계 단위가 본부→부서(팀)로 바뀌어 항목당 인원이 작아지면 고정 분모로는 막대가 보이지 않는다.
+  const barPct = (count: number, max: number) => (max > 0 ? Math.max((count / max) * 100, 2) : 0);
+  const maxPositionCount = Math.max(1, ...positionDistributionData.map((p) => p.count));
+  const maxDepartmentCount = Math.max(1, ...departmentDistributionData.map((d) => d.count));
 
   // Mini calendar generator for the currently viewed year/month
   const daysInAugust = calendarDays;
@@ -730,7 +743,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           <div
                             className="h-full rounded-full transition-all duration-500"
                             style={{
-                              width: `${(pos.count / 240) * 100}%`,
+                              width: `${barPct(pos.count, maxPositionCount)}%`,
                               backgroundColor: pos.color,
                             }}
                           />
@@ -746,9 +759,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     <span className="text-xs font-bold text-slate-800">
                       부서별 인원 분포
                     </span>
-                    <span className="text-[10px] text-slate-400 font-medium">{departmentDistributionData.length}개 조직</span>
+                    <span className="text-[10px] text-slate-400 font-medium">{departmentDistributionData.length}개 부서</span>
                   </div>
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-2 text-xs max-h-72 overflow-y-auto pr-1">
                     {departmentDistributionData.map((dept) => (
                       <div key={dept.name} className="space-y-1">
                         <div className="flex justify-between items-center text-slate-700 text-[11px]">
@@ -761,7 +774,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
                           <div
                             className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                            style={{ width: `${(dept.count / 200) * 100}%` }}
+                            style={{ width: `${barPct(dept.count, maxDepartmentCount)}%` }}
                           />
                         </div>
                       </div>

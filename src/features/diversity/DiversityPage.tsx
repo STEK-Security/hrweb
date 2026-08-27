@@ -14,7 +14,7 @@ import {
   buildPositionDistribution,
   groupBy,
   pct,
-} from '../dashboard/DashboardPage';
+} from '../../lib/stats';
 import type { RatioData } from '../../types';
 
 const EDU_ORDER = ['고졸', '전문대졸', '대졸', '석사', '박사'];
