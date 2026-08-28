@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Settings, Loader2 } from 'lucide-react';
 import { listOrgSettings, updateOrgSetting, type OrgSetting } from '../../lib/db';
+import { setFieldGrades } from '../../excel/derive';
 import { logEvent } from '../../lib/audit';
 
 const KEY_LABELS: Record<string, string> = {
@@ -56,6 +57,9 @@ export function OrgSettingsPage() {
     setSavingKey(key);
     const ok = await updateOrgSetting(key, parsed);
     if (ok) {
+      // field_grades 는 derive.ts 가 앱 시작 시 1회만 읽는다 → 저장 즉시 메모리에도 반영해야
+      // 새로고침 없이 사무직/현장직 분류가 바뀐다.
+      if (key === 'field_grades' && Array.isArray(parsed)) setFieldGrades(parsed as string[]);
       await logEvent('update_settings', { targetTable: 'org_settings', meta: { key } });
       reload();
     } else {
