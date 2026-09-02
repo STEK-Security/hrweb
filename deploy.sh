@@ -15,9 +15,18 @@ cd "$(dirname "$0")"
 : "${DOKPLOY_API_KEY:?.env 에 DOKPLOY_API_KEY 필요}"
 AID="${DOKPLOY_APP_ID:-kmatO1BdLPi0Sg_gibUbz}"
 
-if [ -n "$(git status --porcelain -- src Dockerfile nginx.conf package.json)" ]; then
-  echo "⚠ 커밋되지 않은 소스 변경이 있습니다. Dokploy 는 GitHub main 을 빌드하므로 먼저 push 하세요."
-  git status --short -- src Dockerfile nginx.conf package.json
+# Dokploy 는 GitHub main 을 clone 해서 빌드한다. 그러므로 "빌드될 내용"은 로컬 작업트리가
+# 아니라 origin/main 이다. 경로를 몇 개 골라 검사하면(vite.config.ts, tsconfig.json,
+# index.html, bun.lock ...) 빠진 파일 때문에 구버전을 새 버전으로 착각한다 → 두 조건 모두 본다.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "⚠ 커밋되지 않은 변경이 있습니다. Dokploy 는 GitHub main 을 빌드하므로 먼저 commit + push 하세요."
+  git status --short --untracked-files=no
+  exit 1
+fi
+git fetch -q origin main
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+  echo "⚠ 로컬 HEAD 와 origin/main 이 다릅니다. push 하지 않으면 지금 코드가 배포되지 않습니다."
+  git --no-pager log --oneline origin/main..HEAD | sed 's/^/  미푸시 /'
   exit 1
 fi
 

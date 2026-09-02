@@ -357,7 +357,7 @@ export function RosterPage() {
                 </tr>
               ) : cols.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={colCount} className="px-3 py-8 text-center text-slate-400">
                     표시할 컬럼이 없습니다. "컬럼"에서 선택하세요.
                   </td>
                 </tr>
