@@ -9,6 +9,19 @@
 --    0023_demo_seed_training_eval.sql, 0025_demo_seed_more.sql 를 다시 실행할 것.
 -- Supabase Studio(관리자, RLS 우회)에서 실행 전제.
 
+-- ============================================================
+-- ★ 안전 게이트 — 이 파일은 실 운영 데이터를 조건 없이 DELETE 한다.
+--   번호 순서대로 마이그레이션을 재적용하다가 실수로 실행되는 사고를 막는다.
+--   정말 데모 데이터를 넣으려면 같은 세션에서 먼저 아래를 실행할 것:
+--       set hr.allow_demo_seed = 'yes';
+-- ============================================================
+do $$
+begin
+  if current_setting('hr.allow_demo_seed', true) is distinct from 'yes' then
+    raise exception '데모 시드는 실 데이터를 삭제합니다. 실행하려면 먼저: set hr.allow_demo_seed = ''yes'';';
+  end if;
+end $$;
+
 begin;
 
 delete from public.leave_records;

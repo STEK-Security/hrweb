@@ -30,7 +30,11 @@ export const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
   {
     title: '기본정보',
     fields: [
-      ['사번', '사번'], ['성명', '성명'], ['영문성명', '영문성명'], ['닉네임', '닉네임'],
+      ['사번', '사번'], ['그룹사원번호', '그룹사원번호'],
+      // 그룹ID(그룹웨어 계정 = 그룹 메일주소). 전 시스템의 메일 발송 기준값이라 명부에 반드시 뜬다.
+      // 개인메일(민감값, employee_sensitive)과 다른 값이다.
+      ['그룹ID', '그룹웨어ID'],
+      ['성명', '성명'], ['영문성명', '영문성명'], ['닉네임', '닉네임'],
       ['성별', '성별'], ['생년월일', '생년월일'], ['나이(만)', '나이(만)'],
       ['결혼여부', '결혼여부'], ['음양구분', '음양구분'], ['생일', '생일'],
     ],
@@ -164,11 +168,21 @@ export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="employee-drawer-title"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+    >
       <div className="bg-white h-full w-full sm:max-w-lg shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
           <div>
-            <h3 className="text-base font-bold text-slate-900">{employee?._name ?? '직원 상세'}</h3>
+            <h3 id="employee-drawer-title" className="text-base font-bold text-slate-900">
+              {employee?._name ?? '직원 상세'}
+            </h3>
             <p className="text-xs text-slate-500">
               {employee ? `사번 ${employee._id} · ${employee._team}` : ''}
             </p>

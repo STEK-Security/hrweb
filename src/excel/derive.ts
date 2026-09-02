@@ -119,9 +119,16 @@ export const normalizeOrg = (v: string): string =>
 
 /** 테스트 계정·GPRO 데이터는 집계에서 제외한다 */
 const EXCLUDE_RE = /테스트|test|GPRO/i;
+/**
+ * 그룹웨어ID 는 로그인 아이디/메일주소라 부분일치로 보면 오탐이 난다
+ * (`bluesteel`, `jtester`, `@gpro.co.kr` 도메인 등 → 멀쩡한 직원이 전 화면에서 사라진다).
+ * 여기만 "테스트 계정 접두사"로 좁힌다. 나머지 필드는 사람이 적는 값이라 기존 부분일치 유지.
+ */
+const EXCLUDE_ID_RE = /^(테스트|test)/i;
+const EXCLUDE_FIELDS = ['성명', '법인', '소속', '전체소속명', '직책', '직급', '영문성명', '닉네임'];
 export function isExcludedRow(raw: RawRow): boolean {
-  const fields = ['성명', '법인', '소속', '전체소속명', '직책', '직급', '그룹웨어ID', '영문성명', '닉네임'];
-  return fields.some((k) => EXCLUDE_RE.test(String(raw[k] ?? '')));
+  if (EXCLUDE_ID_RE.test(String(raw['그룹웨어ID'] ?? '').trim())) return true;
+  return EXCLUDE_FIELDS.some((k) => EXCLUDE_RE.test(String(raw[k] ?? '')));
 }
 
 /** 집계 대상에서 뺄 조직명 (부서별 분포 등) */

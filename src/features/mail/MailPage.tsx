@@ -4,10 +4,13 @@
  */
 import { useEffect, useState } from 'react';
 import { Loader2, Mail, Send, X } from 'lucide-react';
-import { listEmployees, getSensitiveMasked, listMailQueue, type Employee, type MailQueueRow } from '../../lib/db';
+import { listEmployees, listMailQueue, type Employee, type MailQueueRow } from '../../lib/db';
 import { sendMailNow, flushMailQueue } from '../../lib/mail';
 import { logEvent } from '../../lib/audit';
 import { EmployeePicker } from '../../components/EmployeePicker';
+
+/** 발송 직전 최소 검증용. RFC 완전 준수가 목적이 아니라 SMTP 가 문법오류로 뱉을 값을 거르는 용도. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface Recipient {
   empId: string;
@@ -42,8 +45,14 @@ export function MailPage() {
   const [flushing, setFlushing] = useState(false);
 
   useEffect(() => {
-    listEmployees().then(setEmployees);
+    let cancelled = false;
+    listEmployees().then((data) => {
+      if (!cancelled) setEmployees(data);
+    });
     reloadHistory();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const reloadHistory = () => {
@@ -53,13 +62,23 @@ export function MailPage() {
       .finally(() => setHistoryLoading(false));
   };
 
-  const addRecipient = async (empId: string, emp: Employee) => {
+  const addRecipient = (empId: string, emp: Employee) => {
     if (!empId) return;
     if (recipients.some((r) => r.empId === empId)) return;
-    const masked = await getSensitiveMasked(empId);
-    const email = masked?.email as string | undefined;
+    // 발송 기준은 그룹ID(그룹웨어 계정 = 그룹 메일주소)다. 개인메일이 아니다.
+    // 예전엔 employee_sensitive 의 개인메일을 썼는데, 사내 발송은 전부 그룹ID 로 가야 한다.
+    const email = (emp['그룹웨어ID'] ?? '').toString().trim();
     if (!email) {
-      setMessage({ type: 'error', text: `${emp._name}님은 등록된 이메일이 없어 제외되었습니다.` });
+      setMessage({ type: 'error', text: `${emp._name}님은 그룹ID(메일주소)가 없어 제외되었습니다.` });
+      return;
+    }
+    // 그룹웨어에 따라 그룹ID 가 메일주소가 아닌 로그인 아이디(예: mjkim)로 들어와 있을 수 있다.
+    // 도메인을 임의로 붙이면 엉뚱한 곳으로 나가므로, 여기서 걸러 인사팀이 원본을 고치게 한다.
+    if (!EMAIL_RE.test(email)) {
+      setMessage({
+        type: 'error',
+        text: `${emp._name}님의 그룹ID("${email}")가 메일주소 형식이 아닙니다. 직원명부에서 그룹ID를 수정하세요.`,
+      });
       return;
     }
     setRecipients((prev) => [...prev, { empId, name: emp._name, email }]);
@@ -79,6 +98,11 @@ export function MailPage() {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+    const badManual = manual.filter((e) => !EMAIL_RE.test(e));
+    if (badManual.length) {
+      setMessage({ type: 'error', text: `메일주소 형식이 올바르지 않습니다: ${badManual.join(', ')}` });
+      return;
+    }
     const emails = Array.from(new Set([...recipients.map((r) => r.email), ...manual]));
     if (emails.length === 0) {
       setMessage({ type: 'error', text: '수신자를 1명 이상 지정해 주세요.' });
@@ -153,7 +177,12 @@ export function MailPage() {
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700"
                 >
                   {r.name} <span className="text-blue-400">{r.email}</span>
-                  <button type="button" onClick={() => removeRecipient(r.empId)} className="text-blue-400 hover:text-blue-700">
+                  <button
+                    type="button"
+                    onClick={() => removeRecipient(r.empId)}
+                    aria-label={`${r.name} 수신자 제거`}
+                    className="text-blue-400 hover:text-blue-700"
+                  >
                     <X className="w-3 h-3" />
                   </button>
                 </span>

@@ -155,13 +155,23 @@ export function ensureFieldGrades(): Promise<void> {
   return fieldGradesOnce;
 }
 
+/**
+ * 직전 listEmployees() 가 derive.ts 제외규칙(테스트/GPRO)으로 걸러낸 행 수.
+ * 조용히 사라지면 "데이터가 안 보인다"로만 보이므로 화면이 건수를 표시할 수 있게 노출한다.
+ */
+let lastExcludedCount = 0;
+export const excludedCount = (): number => lastExcludedCount;
+
 /** employees 전체 조회(soft delete 된 행 제외) → 제외 규칙 적용 후 파생필드까지 붙여 반환. */
 export async function listEmployees(): Promise<Employee[]> {
   if (!supabase) return [];
   await ensureFieldGrades();
   const { data, error } = await supabase.from('employees').select('*').is('deleted_at', null);
   if (error || !data) return [];
-  return deriveAll(data as RawRow[]);
+  const rows = data as RawRow[];
+  const derived = deriveAll(rows);
+  lastExcludedCount = rows.length - derived.length;
+  return derived;
 }
 
 /** 단일 직원 조회(파생필드 포함, soft delete 된 행 제외). 없으면 null. */

@@ -3,6 +3,7 @@ import { useAuth, signOut } from './lib/auth';
 import { logEvent } from './lib/audit';
 import { LoginPage } from './features/auth/LoginPage';
 import { Navbar } from './components/Navbar';
+import { DbErrorBanner } from './components/DbErrorBanner';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { RosterPage } from './features/roster/RosterPage';
 import { LeavePage } from './features/leave/LeavePage';
@@ -73,6 +74,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <DbErrorBanner />
       <Navbar
         activeMenu={activeMenu}
         onSelectMenu={handleSelectMenu}

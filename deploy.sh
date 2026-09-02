@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# hr-app.html 을 빌드해 사내 Dokploy(hr.stek.kr, frontend)에 배포한다.
+# hr.stek.kr 배포 — Dokploy 가 GitHub 의 Dockerfile 로 빌드하게 트리거한다.
+#
+# ★ 로컬에서 bun 빌드한 단일파일(hr-app.html)을 파일마운트로 밀어넣지 않는다.
+#   로컬 .env 에는 VITE_SUPABASE_* 가 없어서(Dokploy buildArgs 에만 있다) 그 번들은
+#   supabase 미연결로 빌드되고, 마운트가 Docker 산출물을 덮어써 앱이 통째로 빈 화면이 된다.
+#   실제로 두 번 그랬다. 그래서 이 스크립트는 그런 마운트가 있으면 먼저 제거한다.
+#
 # 사내망(172.30.60.21 도달 가능)에서 실행. .env 에 DOKPLOY_URL / DOKPLOY_API_KEY 필요.
+# GitHub webhook 은 사내망 Dokploy 에 도달하지 못하므로 push 만으로는 배포되지 않는다.
 set -euo pipefail
 cd "$(dirname "$0")"
 [ -f .env ] && { set -a; . ./.env; set +a; }
@@ -8,38 +15,57 @@ cd "$(dirname "$0")"
 : "${DOKPLOY_API_KEY:?.env 에 DOKPLOY_API_KEY 필요}"
 AID="${DOKPLOY_APP_ID:-kmatO1BdLPi0Sg_gibUbz}"
 
-echo "▶ 빌드"
-bun install --frozen-lockfile >/dev/null 2>&1 || bun install >/dev/null
-bun run build:single >/dev/null
-[ -f hr-app.html ] || { echo "빌드 실패: hr-app.html 없음"; exit 1; }
-echo "  hr-app.html $(wc -c < hr-app.html) bytes"
+if [ -n "$(git status --porcelain -- src Dockerfile nginx.conf package.json)" ]; then
+  echo "⚠ 커밋되지 않은 소스 변경이 있습니다. Dokploy 는 GitHub main 을 빌드하므로 먼저 push 하세요."
+  git status --short -- src Dockerfile nginx.conf package.json
+  exit 1
+fi
 
-echo "▶ Dokploy 파일 마운트 갱신 + 재배포"
 DOKPLOY_URL="$DOKPLOY_URL" DOKPLOY_API_KEY="$DOKPLOY_API_KEY" AID="$AID" python3 - <<'PY'
-import json, os, subprocess, sys
+import json, os, subprocess
 U, K, AID = os.environ['DOKPLOY_URL'], os.environ['DOKPLOY_API_KEY'], os.environ['AID']
+
 def api(path, body=None):
     cmd = ['curl','-sS','-H',f'x-api-key:{K}','-H','content-type:application/json', f'{U}/api/{path}']
     if body is not None:
         cmd[1:1] = ['-X','POST','--data-binary','@-']
     r = subprocess.run(cmd, input=(json.dumps(body) if body is not None else None),
-                       capture_output=True, text=True, timeout=60)
+                       capture_output=True, text=True, timeout=120)
     try: return json.loads(r.stdout)
-    except: return r.stdout
+    except Exception: return r.stdout
 
 app = api(f'application.one?applicationId={AID}')
 app = app.get('result') or app
-mount = next((m for m in (app.get('mounts') or []) if m.get('mountPath','').endswith('index.html')), None)
-html = open('hr-app.html').read()
-if mount:
-    api('mounts.update', {"mountId": mount['mountId'], "type": "file",
-        "mountPath": mount['mountPath'], "content": html, "filePath": mount.get('filePath') or 'index.html'})
-    print(f"  마운트 갱신: {mount['mountId']} ({len(html)} bytes)")
-else:
-    api('mounts.create', {"type": "file", "serviceId": AID, "serviceType": "application",
-        "mountPath": "/usr/share/nginx/html/index.html", "content": html, "filePath": "index.html"})
-    print("  마운트 신규 생성")
+
+for m in (app.get('mounts') or []):
+    if m.get('mountPath','').endswith('index.html'):
+        print(f"▶ index.html 파일마운트 제거: {m['mountId']} (Docker 빌드 산출물을 덮어쓰고 있었음)")
+        api('mounts.remove', {"mountId": m['mountId']})
+
+args = app.get('buildArgs') or ''
+for key in ('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'):
+    if key not in args:
+        raise SystemExit(f"✗ Dokploy buildArgs 에 {key} 가 없습니다. 빌드해도 supabase 미연결이 됩니다.")
+
+print("▶ 배포 트리거 (GitHub main → Dockerfile 빌드)")
 api('application.deploy', {"applicationId": AID})
-print("  배포 트리거 완료")
 PY
-echo "✅ https://hr.stek.kr 반영 (Let's Encrypt/전파에 잠시 소요)"
+
+echo "▶ 반영 확인 (빌드에 수 분 소요 — 실패 시 잠시 후 다시 실행)"
+for i in $(seq 1 40); do
+  sleep 15
+  body=$(curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ || true)
+  asset=$(printf '%s' "$body" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+  if [ -n "$asset" ]; then
+    if curl -sk --max-time 30 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
+        | grep -q 'eyJhbGciOiJIUzI1NiI'; then
+      echo "✅ https://hr.stek.kr 반영 완료 ($asset, supabase 연결됨)"
+      exit 0
+    fi
+    echo "  ✗ $asset 에 anon key 가 없습니다 — buildArgs 주입 실패"
+    exit 1
+  fi
+  printf '  ...대기 %d/40\n' "$i"
+done
+echo "✗ 시간 내 반영 확인 실패. Dokploy 에서 빌드 로그를 확인하세요."
+exit 1

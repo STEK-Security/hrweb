@@ -11,6 +11,7 @@ import {
   localISO,
   setFieldGrades,
   fieldGrades,
+  isExcludedRow,
   DEFAULT_FIELD_GRADES,
 } from '../../src/excel/derive';
 import type { RawRow } from '../../src/excel/parse';
@@ -96,4 +97,14 @@ assert.equal(nowSnap[0]._age, 32);
 // 6) 전역 기준일이 호출 전 값으로 복원된다
 assert.equal(localISO(today()), '2026-08-27', 'deriveAllAsOf 후 전역 기준일이 복원되지 않음');
 
-console.log('PASS derive (6 checks)');
+// 7) 제외규칙 — 그룹웨어ID 는 접두 일치만(부분일치 오탐으로 멀쩡한 직원이 사라지면 안 된다)
+assert.equal(isExcludedRow(row({ 그룹웨어ID: 'test01' })), true, '테스트 계정이 제외되지 않음');
+assert.equal(isExcludedRow(row({ 그룹웨어ID: '테스트계정' })), true);
+assert.equal(isExcludedRow(row({ 그룹웨어ID: 'bluesteel' })), false, '오탐: steel 안의 tee 아님');
+assert.equal(isExcludedRow(row({ 그룹웨어ID: 'jtester@stek.kr' })), false, '오탐: 이름 안의 test');
+assert.equal(isExcludedRow(row({ 그룹웨어ID: 'mjkim@gpro.co.kr' })), false, '오탐: 메일 도메인의 gpro');
+assert.equal(isExcludedRow(row({ 소속: 'GPRO사업부' })), true, '사람이 적는 필드는 부분일치 유지');
+assert.equal(isExcludedRow(row({ 성명: '테스트직원' })), true);
+assert.equal(isExcludedRow(row({ 그룹웨어ID: 'mjkim' })), false);
+
+console.log('PASS derive (7 checks)');

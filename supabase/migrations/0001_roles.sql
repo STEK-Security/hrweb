@@ -10,7 +10,9 @@ alter default privileges in schema public revoke all on tables from anon, authen
 -- 역할은 user_roles 로만 관리한다. profiles/JWT 어디에도 role 을 이중으로 두지 않는다.
 create table if not exists public.user_roles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('시스템관리자','인사담당자','팀장','일반')),
+  -- 구 4역할 + 신 2역할(0012)을 모두 허용한다. 0002 의 handle_new_user() 는 '사용자' 를
+  -- 넣으므로, 여기서 구 4역할만 허용하면 0012 적용 전까지 신규 가입이 전부 실패한다.
+  role text not null check (role in ('시스템관리자','인사담당자','팀장','일반','사용자','관리자')),
   updated_by uuid,
   updated_at timestamptz not null default now()
 );

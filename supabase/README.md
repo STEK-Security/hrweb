@@ -139,6 +139,40 @@ Studio SQL 편집기에서 **`supabase/migrations/APPLY_EXPANSION.sql`** 하나�
 관리자 전용 제한은 없다(설정류가 아니라 인사 업무 데이터라 employees/leave_records 와 동일한
 권한 모델). `created_by` 는 `default auth.uid()` 로 앱이 별도로 채우지 않아도 된다.
 
+## 3-3. 그룹ID + 69컬럼 전량 인제스트 (0028) — 필수
+
+**`supabase/migrations/0028_groupware_id_and_full_ingest.sql`** 을 Studio SQL 편집기에서 실행한다.
+n8n 워크플로(`n8n/hr/hr_supabase_upsert.n8n.json`)를 새 버전으로 배포하기 **전에** 먼저 적용해야
+한다 — 순서가 바뀌면 없는 컬럼(`그룹웨어ID`)·없는 함수(`n8n_upsert_sensitive`)로 PostgREST 가
+400/404 를 던진다.
+
+이 마이그레이션이 하는 일:
+
+| | 내용 |
+|---|---|
+| (a) | `employees."그룹웨어ID"` 신설 + `authenticated` select / `n8n_ingest` insert·update GRANT + 부분 인덱스. **그룹ID(= 그룹 메일주소)는 전 시스템 메일 발송 기준값**이라 민감값이 아니라 평문 컬럼으로 둔다(개인메일 `individualEmail` 과 다른 값 — 그쪽은 여전히 `employee_sensitive`). |
+| (c) | 8자리 사번이 `1405-02-01` 로 저장돼버린 기존 행 복구. 정상 사번 행이 이미 있으면 망가진 쪽을 soft delete(하위 이력 FK 보존), 없으면 제자리에서 하이픈만 제거. `그룹사원번호` 도 같이 편다. 원인은 워커 `norm()` 이 8자리 숫자면 무조건 날짜로 폈던 것 — `hr_groupware_checker.py` / `scripts/gw_export.py` 양쪽 수정 완료. |
+| (b) | `n8n_upsert_sensitive(payload jsonb)` SECURITY DEFINER RPC 신설. 민감 14컬럼(주민번호·주소4·연락처2·계좌6·개인메일)을 사번 기준으로 찾아 Vault 키로 암호화 저장한다. EXECUTE 는 `n8n_ingest` 에게만. 빈 값은 기존 저장값을 덮지 않는다. `employee_sensitive` 테이블 자체의 `n8n_ingest` 권한은 여전히 0. |
+
+전제: Vault 시크릿 `app_enc_key` 가 등록되어 있어야 한다(2절). 없으면 (b) RPC 가 fail-closed 로
+예외를 던진다 — 평문으로 새는 것보다 실패가 낫기 때문이다.
+
+주민번호·계좌번호는 그룹웨어가 기본적으로 마스킹해서 내려준다(`731105-1******`). 평문이
+필요하면 워커 `.env` 에 `HR_GROUPWARE_VISIBILITY_RN=Y` / `HR_GROUPWARE_VISIBILITY_AN=Y` 를 켠다.
+
+## 3-4. 데모 시드는 안전 게이트로 잠겨 있다
+
+`0023 / 0025 / 0026` 은 **데모 시드**다. 특히 `0025`·`0026` 은 `payroll_monthly` /
+`department_productivity` / `leave_records` / `employees` 를 **조건 없이 DELETE** 한다.
+번호 순서대로 재적용하다 실수로 실행되면 실 인사데이터가 더미로 덮어써지므로, 두 파일 앞에
+게이트를 뒀다. 정말 데모 데이터를 넣을 때만 같은 세션에서 먼저 실행할 것:
+
+```sql
+set hr.allow_demo_seed = 'yes';
+```
+
+게이트 없이 실행하면 `데모 시드는 실 데이터를 삭제합니다...` 예외로 즉시 중단된다.
+
 ## 4. 검증
 
 적용 후 `supabase/tests/verify.sql` 의 각 쿼리를 Studio SQL 편집기에서 실행한다.

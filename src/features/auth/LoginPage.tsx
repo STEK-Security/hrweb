@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Mail, ShieldCheck, AlertCircle } from 'lucide-react';
 import { signIn } from '../../lib/auth';
+import { DbErrorBanner } from '../../components/DbErrorBanner';
 
 const features = [
   '인력·인건비·조직 현황을 한 화면에서 실시간 확인',
@@ -28,7 +29,9 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <DbErrorBanner />
+      <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-[940px] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden grid md:grid-cols-2">
         {/* Brand panel */}
         <div className="hidden md:flex flex-col justify-between bg-gradient-to-br from-blue-700 to-blue-500 text-white p-10">
@@ -135,6 +138,7 @@ export const LoginPage: React.FC = () => {
             계정이 없으신가요? 관리자에게 문의해주세요. 비밀번호를 잊으셨다면 관리자에게 초기화를 요청하세요.
           </p>
         </div>
+      </div>
       </div>
     </div>
   );

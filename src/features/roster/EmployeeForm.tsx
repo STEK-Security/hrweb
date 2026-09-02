@@ -76,6 +76,11 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 조회 실패/미존재. 이때 폼을 그냥 비워서 보여주면 사용자가 필수 3개만 채우고 저장 →
+   * 나머지 52개 컬럼이 전부 null 로 덮어써져 복구 불가능하다. 그래서 폼 자체를 막는다.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [sensitive, setSensitiveForm] = useState<Record<string, string>>({});
 
@@ -83,9 +88,12 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
     if (!employeeId) return;
     let cancelled = false;
     setLoading(true);
+    setLoadFailed(false);
     getEmployee(employeeId).then((e) => {
       if (cancelled) return;
-      if (e) {
+      if (!e) {
+        setLoadFailed(true);
+      } else {
         const next: Record<string, string> = {};
         for (const group of FIELD_GROUPS) {
           for (const [, key] of group.fields) {
@@ -118,6 +126,10 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
 
   const handleSubmit = async () => {
     setError(null);
+    if (loadFailed) {
+      setError('직원 정보를 불러오지 못해 저장할 수 없습니다.');
+      return;
+    }
 
     if (!form['성명']?.trim() || !form['사번']?.trim() || !form['입사일']?.trim()) {
       setError('성명·사번·입사일은 필수입니다.');
@@ -218,10 +230,18 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="employee-form-title"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+    >
       <div className="bg-white h-full w-full sm:max-w-2xl shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
-          <h3 className="text-base font-bold text-slate-900">
+          <h3 id="employee-form-title" className="text-base font-bold text-slate-900">
             {isEdit ? '직원 정보 수정' : '직원 추가'}
           </h3>
           <button
@@ -236,6 +256,25 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
 
         {loading ? (
           <div className="py-12 text-center text-slate-400 text-xs">불러오는 중...</div>
+        ) : loadFailed ? (
+          <div className="p-5">
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-semibold space-y-2">
+              <p>직원 정보를 불러오지 못했습니다.</p>
+              <p className="font-normal text-rose-600/80">
+                이 상태로 저장하면 기존 값이 모두 지워지므로 수정을 막았습니다.
+                네트워크·권한을 확인한 뒤 다시 시도하세요.
+              </p>
+            </div>
+            <div className="flex justify-end pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-xs"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
         ) : (
           <form
             onSubmit={(e) => {
@@ -260,8 +299,9 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                         key === '나이(만)' ? age : key === '근속연수(입사일)' ? tenureHire : tenureGroupHire;
                       return (
                         <div key={key}>
-                          <label className="text-[11px] text-slate-500 block mb-0.5">{label} (자동계산)</label>
+                          <label htmlFor={`ef-${key}`} className="text-[11px] text-slate-500 block mb-0.5">{label} (자동계산)</label>
                           <input
+                            id={`ef-${key}`}
                             type="text"
                             readOnly
                             value={value || ''}
@@ -274,10 +314,11 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                     if (SELECT_OPTIONS[key]) {
                       return (
                         <div key={key}>
-                          <label className="text-[11px] text-slate-500 block mb-0.5">
+                          <label htmlFor={`ef-${key}`} className="text-[11px] text-slate-500 block mb-0.5">
                             {label}{required && ' *'}
                           </label>
                           <select
+                            id={`ef-${key}`}
                             value={form[key] || ''}
                             onChange={(e) => setField(key, e.target.value)}
                             className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -294,10 +335,11 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                     }
                     return (
                       <div key={key}>
-                        <label className="text-[11px] text-slate-500 block mb-0.5">
+                        <label htmlFor={`ef-${key}`} className="text-[11px] text-slate-500 block mb-0.5">
                           {label}{required && ' *'}
                         </label>
                         <input
+                          id={`ef-${key}`}
                           type={DATE_KEYS.has(key) ? 'date' : 'text'}
                           value={form[key] || ''}
                           onChange={(e) => setField(key, e.target.value)}
@@ -321,8 +363,9 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                   if (f.kind === 'text') {
                     return (
                       <div key={f.key}>
-                        <label className="text-[11px] text-slate-500 block mb-0.5">{f.label}</label>
+                        <label htmlFor={`ef-s-${f.key}`} className="text-[11px] text-slate-500 block mb-0.5">{f.label}</label>
                         <input
+                          id={`ef-s-${f.key}`}
                           type="text"
                           placeholder={f.placeholder}
                           value={sensitive[f.key] || ''}
@@ -339,6 +382,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                         <input
                           type="text"
                           placeholder="은행"
+                          aria-label={`${f.label} 은행`}
                           value={sensitive[`${f.key}_bank`] || ''}
                           onChange={(e) => setSensitiveField(`${f.key}_bank`, e.target.value)}
                           className="px-2 py-1.5 bg-white border border-slate-200 rounded text-xs"
@@ -346,6 +390,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                         <input
                           type="text"
                           placeholder="계좌번호"
+                          aria-label={`${f.label} 계좌번호`}
                           value={sensitive[`${f.key}_number`] || ''}
                           onChange={(e) => setSensitiveField(`${f.key}_number`, e.target.value)}
                           className="px-2 py-1.5 bg-white border border-slate-200 rounded text-xs"
@@ -353,6 +398,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                         <input
                           type="text"
                           placeholder="예금주"
+                          aria-label={`${f.label} 예금주`}
                           value={sensitive[`${f.key}_owner`] || ''}
                           onChange={(e) => setSensitiveField(`${f.key}_owner`, e.target.value)}
                           className="px-2 py-1.5 bg-white border border-slate-200 rounded text-xs"
@@ -366,6 +412,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                       <input
                         type="text"
                         placeholder="우편번호"
+                        aria-label={`${f.label} 우편번호`}
                         value={sensitive[`${f.key}_postal`] || ''}
                         onChange={(e) => setSensitiveField(`${f.key}_postal`, e.target.value)}
                         className="px-2 py-1.5 bg-white border border-slate-200 rounded text-xs"
@@ -373,6 +420,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                       <input
                         type="text"
                         placeholder="주소"
+                        aria-label={`${f.label} 주소`}
                         value={sensitive[`${f.key}_address`] || ''}
                         onChange={(e) => setSensitiveField(`${f.key}_address`, e.target.value)}
                         className="col-span-2 px-2 py-1.5 bg-white border border-slate-200 rounded text-xs"
