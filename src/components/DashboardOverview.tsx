@@ -38,6 +38,7 @@ import {
   AlertTriangle,
   Info,
 } from 'lucide-react';
+import { buildTurnoverRates } from '../lib/stats';
 
 interface DashboardOverviewProps {
   kpiData: KPIData;
@@ -208,10 +209,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const yearLeaversAsOf = hasRecords
     ? employeeRecords.filter((r) => r.quitDate && r.quitDate.slice(0, 4) === String(asOfYear)).length
     : yearLeavers;
-  const annualTurnover = kpiData.totalEmployees ? (yearLeavers / kpiData.totalEmployees) * 100 : 0;
-  const earlyTurnover = tenureByDepartment.length
-    ? tenureByDepartment.reduce((sum, t) => sum + t.earlyTurnoverRate, 0) / tenureByDepartment.length
-    : 0;
+  // 퇴사율 명세: 분모 = (연초 재직자 + 연말/기준일 재직자)/2, 조기 = 당해 퇴사자 중 근속 365일 미만 비중
+  const turnover = buildTurnoverRates(employeeRecords, asOfDate);
   const diffTotal = hasRecords ? currentTotal - prevMonthTotal : (kpiData.prevMonthDiff?.total ?? 0);
   const diffPct = prevMonthTotal > 0 ? (diffTotal / prevMonthTotal) * 100 : 0;
   const diffLeavers = hasRecords ? currentLeavers - prevMonthLeavers : (kpiData.prevMonthDiff?.leavers ?? 0);
@@ -883,11 +882,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-center pt-1">
                   <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex flex-col items-center justify-center">
                     <span className="text-[10px] text-slate-500 block">연간 누적 퇴사율</span>
-                    <span className="text-lg font-black text-slate-900 mt-0.5">{annualTurnover.toFixed(1)}%</span>
+                    <span className="text-lg font-black text-slate-900 mt-0.5">{turnover.annualRate.toFixed(1)}%</span>
                   </div>
                   <div className="bg-amber-50/60 p-2.5 rounded-lg border border-amber-200 flex flex-col items-center justify-center">
                     <span className="text-[10px] text-amber-800 block">1년내 조기 퇴사율</span>
-                    <span className="text-lg font-black text-amber-700 mt-0.5">{earlyTurnover.toFixed(1)}%</span>
+                    <span className="text-lg font-black text-amber-700 mt-0.5">{turnover.earlyRate.toFixed(1)}%</span>
                   </div>
                 </div>
               </div>

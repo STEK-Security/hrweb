@@ -106,7 +106,57 @@ export function buildDepartmentDistribution(active: Employee[]) {
     }));
 }
 
-/** 부서(=팀)별 평균 근속·조기퇴사율. 집계 단위는 buildDepartmentDistribution 과 동일하게 _team. */
+/** ISO 날짜(YYYY-MM-DD) 간 일수 차. Date.parse 는 UTC 파싱이라 DST/시간대 영향 없음. */
+const dayDiff = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
+
+/** 근속 365일 미만 퇴사(입사 당일 퇴사 = 0일도 포함) */
+const isEarlyLeaver = (hire: string | null, quit: string | null) =>
+  !!hire && !!quit && dayDiff(hire, quit) < 365;
+
+/** 소수 둘째 자리 반올림 (명세: ROUND(rate, 2)) */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * 연간 누적 퇴사율 / 1년 내 조기 퇴사율(방식 B).
+ *   연간 누적 = 당해 퇴사자 / ((연초 재직자 + 연말 재직자) / 2) × 100
+ *   조기 = 당해 퇴사자 중 근속 365일 미만 / 당해 퇴사자 × 100
+ * 진행 중인 연도면 "연말" 을 기준일(asOf) 로 잡는다. 분모 0 이면 0% 로 반환.
+ */
+export function buildTurnoverRates(
+  records: { hireDate: string | null; quitDate: string | null }[],
+  asOf: string
+) {
+  const year = asOf.slice(0, 4);
+  const yearStart = `${year}-01-01`;
+  // ponytail: 진행 중인 연도는 asOf 가 연말을 대신한다(퇴사자 집계 상한도 동일하게 clamp)
+  const yearEnd = asOf < `${year}-12-31` ? asOf : `${year}-12-31`;
+
+  const leavers = records.filter((r) => r.quitDate && r.quitDate >= yearStart && r.quitDate <= yearEnd);
+  const earlyLeavers = leavers.filter((r) => isEarlyLeaver(r.hireDate, r.quitDate)).length;
+
+  const startHeadcount = records.filter(
+    (r) => r.hireDate && r.hireDate < yearStart && (!r.quitDate || r.quitDate >= yearStart)
+  ).length;
+  const endHeadcount = records.filter(
+    (r) => r.hireDate && r.hireDate <= yearEnd && (!r.quitDate || r.quitDate > yearEnd)
+  ).length;
+  const avgHeadcount = (startHeadcount + endHeadcount) / 2;
+
+  return {
+    leavers: leavers.length,
+    earlyLeavers,
+    startHeadcount,
+    endHeadcount,
+    avgHeadcount,
+    annualRate: avgHeadcount > 0 ? round2((leavers.length / avgHeadcount) * 100) : 0,
+    earlyRate: leavers.length > 0 ? round2((earlyLeavers / leavers.length) * 100) : 0,
+  };
+}
+
+/**
+ * 부서(=팀)별 평균 근속·조기퇴사율. 집계 단위는 buildDepartmentDistribution 과 동일하게 _team.
+ * 조기퇴사율은 buildTurnoverRates 와 같은 방식 B(분모=해당 부서 퇴사자)를 쓴다.
+ */
 export function buildTenureByDepartment(employees: Employee[]) {
   const grouped = groupBy(employees.filter((e) => isRealOrg(e._team)), (e) => e._team);
   return Object.entries(grouped).map(([department, arr]) => {
@@ -114,8 +164,9 @@ export function buildTenureByDepartment(employees: Employee[]) {
     const avgYears = active.length
       ? active.reduce((sum, e) => sum + (e._tenure as number), 0) / active.length
       : 0;
-    const earlyLeavers = arr.filter((e) => e._retired && e._tenure != null && (e._tenure as number) < 1).length;
-    const earlyTurnoverRate = arr.length ? (earlyLeavers / arr.length) * 100 : 0;
+    const leavers = arr.filter((e) => e._retired);
+    const earlyLeavers = leavers.filter((e) => isEarlyLeaver(e._hireDate, e._quitDate)).length;
+    const earlyTurnoverRate = leavers.length ? round2((earlyLeavers / leavers.length) * 100) : 0;
     return { department, avgYears, earlyTurnoverRate };
   });
 }

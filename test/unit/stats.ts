@@ -10,6 +10,7 @@ import {
   buildDepartmentDistribution,
   buildKPI,
   buildMatrixRows,
+  buildTurnoverRates,
   onLeaveAsOf,
 } from '../../src/lib/stats';
 
@@ -92,4 +93,31 @@ assert.equal(matrix[0].corporation, '스텍오토모티브');
 assert.equal(matrix[0].location, '천안 공장', '근무지 파싱 오류(구분자 문제)');
 assert.equal(matrix[0].totalCount, 3);
 
-console.log('PASS stats (4 checks)');
+// 5) 퇴사율 명세 — 분모=(연초+연말 재직자)/2, 조기=당해 퇴사자 중 근속 365일 미만
+const rec = (hireDate: string | null, quitDate: string | null) => ({ hireDate, quitDate });
+const turnoverRecs = [
+  rec('2023-01-01', null),        // 연초·연말 모두 재직
+  rec('2025-06-01', '2026-03-01'), // 연초 재직 → 당해 퇴사(근속 273일, 조기)
+  rec('2026-02-01', '2026-02-01'), // 입사 당일 퇴사(근속 0일, 조기)
+  rec('2024-01-01', '2026-08-01'), // 당해 퇴사(근속 943일, 조기 아님)
+  rec('2026-01-05', null),         // 당해 입사 → 연말만 재직
+];
+const tr = buildTurnoverRates(turnoverRecs, '2026-08-27');
+assert.equal(tr.startHeadcount, 3, '연초 재직자 수 오류');
+assert.equal(tr.endHeadcount, 2, '기준일 재직자 수 오류(진행 중 연도 clamp)');
+assert.equal(tr.leavers, 3, '당해 퇴사자 수 오류');
+assert.equal(tr.earlyLeavers, 2, '조기 퇴사자 수 오류(입사 당일 퇴사 포함)');
+assert.equal(tr.annualRate, 120, '연간 누적 퇴사율 오류');
+assert.equal(tr.earlyRate, 66.67, '조기 퇴사율 오류(ROUND 2자리)');
+
+// 6) 경계값 — 근속 365일은 조기 아님 / 퇴사자 0명·재직자 0명이면 0%
+const bound = buildTurnoverRates(
+  [rec('2025-01-01', '2026-01-01'), rec('2025-01-02', '2026-01-01'), rec('2024-01-01', null)],
+  '2026-12-31'
+);
+assert.equal(bound.leavers, 2);
+assert.equal(bound.earlyLeavers, 1, '근속 365일이 조기 퇴사로 잡힘');
+assert.equal(buildTurnoverRates([], '2026-08-27').annualRate, 0, '분모 0에서 0% 아님');
+assert.equal(buildTurnoverRates([rec('2020-01-01', null)], '2026-08-27').earlyRate, 0);
+
+console.log('PASS stats (6 checks)');
