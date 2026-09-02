@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# hr.stek.kr 배포 — Dokploy 가 GitHub 의 Dockerfile 로 빌드하게 트리거한다.
+# hr.stek.kr 배포 — Dokploy 가 GitHub main 의 Dockerfile 로 빌드하게 트리거하고,
+# Dokploy 배포 레코드 + 라이브 번들로 결과를 검증한다.
 #
 # ★ 로컬에서 bun 빌드한 단일파일(hr-app.html)을 파일마운트로 밀어넣지 않는다.
 #   로컬 .env 에는 VITE_SUPABASE_* 가 없어서(Dokploy buildArgs 에만 있다) 그 번들은
 #   supabase 미연결로 빌드되고, 마운트가 Docker 산출물을 덮어써 앱이 통째로 빈 화면이 된다.
-#   실제로 두 번 그랬다. 그래서 이 스크립트는 그런 마운트가 있으면 먼저 제거한다.
+#   실제로 세 번 그랬다(2026-09-02 마운트 ZnVzkwSX0yuZbvWl8Hv_j 제거). 그래서 이 스크립트는
+#   그런 마운트가 있으면 먼저 제거한다.
 #
 # 사내망(172.30.60.21 도달 가능)에서 실행. .env 에 DOKPLOY_URL / DOKPLOY_API_KEY 필요.
 # GitHub webhook 은 사내망 Dokploy 에 도달하지 못하므로 push 만으로는 배포되지 않는다.
@@ -16,8 +18,8 @@ cd "$(dirname "$0")"
 AID="${DOKPLOY_APP_ID:-kmatO1BdLPi0Sg_gibUbz}"
 
 # Dokploy 는 GitHub main 을 clone 해서 빌드한다. 그러므로 "빌드될 내용"은 로컬 작업트리가
-# 아니라 origin/main 이다. 경로를 몇 개 골라 검사하면(vite.config.ts, tsconfig.json,
-# index.html, bun.lock ...) 빠진 파일 때문에 구버전을 새 버전으로 착각한다 → 두 조건 모두 본다.
+# 아니라 origin/main 이다. 경로를 몇 개 골라 검사하면 빠진 파일 때문에 구버전을 새 버전으로
+# 착각하므로, 작업트리 전체 + HEAD==origin/main 두 조건을 본다.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "⚠ 커밋되지 않은 변경이 있습니다. Dokploy 는 GitHub main 을 빌드하므로 먼저 commit + push 하세요."
   git status --short --untracked-files=no
@@ -30,77 +32,93 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   exit 1
 fi
 
-BEFORE=$(curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ 2>/dev/null \
-  | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true)
-echo "▶ 현재 번들: ${BEFORE:-없음}"
-
 DOKPLOY_URL="$DOKPLOY_URL" DOKPLOY_API_KEY="$DOKPLOY_API_KEY" AID="$AID" python3 - <<'PY'
-import json, os, subprocess
-U, K, AID = os.environ['DOKPLOY_URL'], os.environ['DOKPLOY_API_KEY'], os.environ['AID']
+"""마운트 정리 → buildArgs 검증 → 배포 트리거 → 배포 레코드 대기 → 라이브 번들 검증."""
+import json, os, subprocess, sys, time
 
-def api(path, body=None):
-    cmd = ['curl','-sS','-H',f'x-api-key:{K}','-H','content-type:application/json', f'{U}/api/{path}']
+U, K, AID = os.environ['DOKPLOY_URL'], os.environ['DOKPLOY_API_KEY'], os.environ['AID']
+HOST, IP = 'hr.stek.kr', '172.30.60.21'
+ANON_MARK = 'eyJhbGciOiJIUzI1NiI'   # anon JWT 헤더. 이게 번들에 없으면 앱이 DB 미연결로 뜬다.
+
+
+def api(path, body=None, timeout=120):
+    cmd = ['curl', '-sS', '-H', f'x-api-key:{K}', '-H', 'content-type:application/json', f'{U}/api/{path}']
     if body is not None:
-        cmd[1:1] = ['-X','POST','--data-binary','@-']
+        cmd[1:1] = ['-X', 'POST', '--data-binary', '@-']
     r = subprocess.run(cmd, input=(json.dumps(body) if body is not None else None),
-                       capture_output=True, text=True, timeout=120)
-    try: return json.loads(r.stdout)
-    except Exception: return r.stdout
+                       capture_output=True, text=True, timeout=timeout)
+    try:
+        out = json.loads(r.stdout)
+    except Exception:
+        return r.stdout
+    return out.get('result', out) if isinstance(out, dict) else out
+
+
+def live(path='', binary=False):
+    """자체서명 + 사내 DNS 라 --resolve 로 직접 물린다. 실패는 None."""
+    cmd = ['curl', '-sk', '--max-time', '60', '--resolve', f'{HOST}:443:{IP}', f'https://{HOST}/{path}']
+    r = subprocess.run(cmd, capture_output=True, timeout=90)
+    if r.returncode != 0:
+        return None
+    return r.stdout if binary else r.stdout.decode('utf-8', 'replace')
+
+
+def newest_deployment():
+    rows = api(f'deployment.all?applicationId={AID}')
+    return rows[0] if isinstance(rows, list) and rows else None
+
 
 app = api(f'application.one?applicationId={AID}')
-app = app.get('result') or app
 
 for m in (app.get('mounts') or []):
-    if m.get('mountPath','').endswith('index.html'):
+    if m.get('mountPath', '').endswith('index.html'):
         print(f"▶ index.html 파일마운트 제거: {m['mountId']} (Docker 빌드 산출물을 덮어쓰고 있었음)")
         api('mounts.remove', {"mountId": m['mountId']})
 
 args = app.get('buildArgs') or ''
-for key in ('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'):
-    if key not in args:
-        raise SystemExit(f"✗ Dokploy buildArgs 에 {key} 가 없습니다. 빌드해도 supabase 미연결이 됩니다.")
+missing = [k for k in ('VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY') if k not in args]
+if missing:
+    sys.exit(f"✗ Dokploy buildArgs 에 {', '.join(missing)} 가 없습니다. 빌드해도 supabase 미연결이 됩니다.")
 
-print("▶ 배포 트리거 (GitHub main → Dockerfile 빌드)")
+before = newest_deployment()
+before_id = (before or {}).get('deploymentId')
+print(f"▶ 배포 트리거 (GitHub main → Dockerfile 빌드). 직전 배포: {before_id or '없음'}")
 api('application.deploy', {"applicationId": AID})
+
+# 배포 레코드가 새로 생기고 끝날 때까지 기다린다. 번들 해시 변화로 판정하면
+# 프론트 소스를 안 건드린 커밋에서는 해시가 그대로라 영원히 오탐한다.
+dep = None
+for _ in range(60):          # 최대 5분
+    time.sleep(5)
+    cur = newest_deployment()
+    if not cur or cur.get('deploymentId') == before_id:
+        continue
+    if cur.get('status') in ('done', 'error'):
+        dep = cur
+        break
+    print(f"  ...빌드 중 ({cur.get('status')})")
+else:
+    sys.exit("✗ 시간 내 배포가 끝나지 않았습니다. Dokploy 빌드 로그를 확인하세요.")
+
+title = (dep.get('title') or '').splitlines()[0]
+if dep.get('status') == 'error':
+    sys.exit(f"✗ 빌드 실패: {title}\n  {dep.get('errorMessage') or '(errorMessage 없음)'}")
+print(f"▶ 빌드 완료: {title}")
+
+# 컨테이너 교체가 끝나야 새 자산이 잡힌다. 라이브 번들에 anon key 가 실제로 들어갔는지 확인.
+for _ in range(24):          # 최대 2분
+    index = live()
+    if index:
+        i = index.find('assets/index-')
+        if i >= 0:
+            asset = index[i:index.find('"', i)]
+            js = live(asset, binary=True)
+            # ★ curl | grep -q 로 하면 grep 이 첫 매치에서 끝나 curl 이 SIGPIPE 로 죽고
+            #   pipefail 이 매치를 실패로 뒤집는다. 그래서 파이썬에서 내용을 직접 본다.
+            if js and ANON_MARK.encode() in js:
+                print(f"✅ https://{HOST} 반영 완료 ({asset}, {len(js)} bytes, supabase 연결됨)")
+                sys.exit(0)
+    time.sleep(5)
+
+sys.exit(f"✗ 라이브 번들에서 anon key 를 확인하지 못했습니다 — buildArgs 주입 또는 컨테이너 교체 확인 필요.")
 PY
-
-echo "▶ 반영 확인 (빌드에 수 분 소요)"
-# 배포 전 번들 해시를 먼저 잡아둔다. 해시가 "바뀐" 뒤에 검사해야 한다 —
-# 바로 검사하면 아직 살아있는 이전 번들(또는 교체 중 404)을 새 빌드로 착각한다.
-live_asset() {
-  curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ 2>/dev/null \
-    | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true
-}
-before="$BEFORE"
-changed=0
-asset=""
-TMPJS=$(mktemp)
-trap 'rm -f "$TMPJS"' EXIT
-# 해시가 바뀐 직후에도 컨테이너 교체 중이면 자산 요청이 404/부분응답으로 온다.
-# 그걸 "키 없음"으로 단정하면 정상 배포를 실패로 보고한다(실제로 그랬다) → 재시도한다.
-for i in $(seq 1 40); do
-  sleep 15
-  a=$(live_asset)
-  if [ -n "$a" ] && [ "$a" != "$before" ]; then
-    changed=1
-    asset="$a"
-    # ★ 파이프로 grep -q 하면 안 된다. grep 이 첫 매치에서 바로 끝나 curl 이 SIGPIPE 로
-    #   죽고, pipefail 때문에 "매치했는데도" 파이프라인이 실패로 판정된다(실제로 40회 전부
-    #   오탐했다). 파일로 받아서 검사한다.
-    if curl -fsk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 \
-         "https://hr.stek.kr/$asset" -o "$TMPJS" && grep -q 'eyJhbGciOiJIUzI1NiI' "$TMPJS"; then
-      echo "✅ https://hr.stek.kr 반영 완료 ($asset, supabase 연결됨)"
-      exit 0
-    fi
-    printf '  ...교체 중 %d/40 (%s 아직 안정화 전)\n' "$i" "$asset"
-  else
-    printf '  ...빌드 대기 %d/40 (현재 %s)\n' "$i" "${a:-없음}"
-  fi
-done
-
-if [ "$changed" = 1 ]; then
-  echo "✗ 새 번들 $asset 에서 anon key 를 확인하지 못했습니다 — Dokploy buildArgs 주입 실패 의심"
-else
-  echo "✗ 시간 내 번들 교체를 확인하지 못했습니다. Dokploy 빌드 로그를 확인하세요."
-fi
-exit 1
