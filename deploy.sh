@@ -55,7 +55,8 @@ echo "▶ 반영 확인 (빌드에 수 분 소요 — 실패 시 잠시 후 다�
 for i in $(seq 1 40); do
   sleep 15
   body=$(curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ || true)
-  asset=$(printf '%s' "$body" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+  # grep 미스는 정상 상황(빌드 중)이다. set -e 가 죽지 않게 || true 를 반드시 붙인다.
+  asset=$(printf '%s' "$body" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true)
   if [ -n "$asset" ]; then
     if curl -sk --max-time 30 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
         | grep -q 'eyJhbGciOiJIUzI1NiI'; then
