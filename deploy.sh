@@ -72,19 +72,30 @@ live_asset() {
     | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true
 }
 before="$BEFORE"
+changed=0
+asset=""
+# 해시가 바뀐 직후에도 컨테이너 교체 중이면 자산 요청이 404/부분응답으로 온다.
+# 그걸 "키 없음"으로 단정하면 정상 배포를 실패로 보고한다(실제로 그랬다) → 재시도한다.
 for i in $(seq 1 40); do
   sleep 15
-  asset=$(live_asset)
-  if [ -n "$asset" ] && [ "$asset" != "$before" ]; then
-    if curl -sk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
+  a=$(live_asset)
+  if [ -n "$a" ] && [ "$a" != "$before" ]; then
+    changed=1
+    asset="$a"
+    if curl -fsk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
         | grep -q 'eyJhbGciOiJIUzI1NiI'; then
       echo "✅ https://hr.stek.kr 반영 완료 ($asset, supabase 연결됨)"
       exit 0
     fi
-    echo "✗ $asset 에 anon key 가 없습니다 — Dokploy buildArgs 주입 실패"
-    exit 1
+    printf '  ...교체 중 %d/40 (%s 아직 안정화 전)\n' "$i" "$asset"
+  else
+    printf '  ...빌드 대기 %d/40 (현재 %s)\n' "$i" "${a:-없음}"
   fi
-  printf '  ...빌드 대기 %d/40 (현재 %s)\n' "$i" "${asset:-없음}"
 done
-echo "✗ 시간 내 번들 교체를 확인하지 못했습니다. Dokploy 빌드 로그를 확인하세요."
+
+if [ "$changed" = 1 ]; then
+  echo "✗ 새 번들 $asset 에서 anon key 를 확인하지 못했습니다 — Dokploy buildArgs 주입 실패 의심"
+else
+  echo "✗ 시간 내 번들 교체를 확인하지 못했습니다. Dokploy 빌드 로그를 확인하세요."
+fi
 exit 1
