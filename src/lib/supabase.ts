@@ -31,20 +31,25 @@ const reqUrl = (input: RequestInfo | URL): string =>
  */
 const trackingFetch: typeof fetch = async (input, init) => {
   const res = await fetch(input, init);
-  if (!res.ok && res.status !== 406) {
-    const u = reqUrl(input);
-    if (!u.includes('/auth/v1/')) {
-      let detail = '';
-      try {
-        const body = (await res.clone().json()) as { message?: string; hint?: string } | null;
-        detail = [body?.message, body?.hint].filter(Boolean).join(' — ');
-      } catch {
-        /* 본문이 JSON 이 아니면 상태코드만 쓴다 */
-      }
-      console.error('[supabase]', res.status, u, detail);
-      dbErrorHandler?.(`${res.status} ${detail || res.statusText}`);
-    }
+  if (res.ok) return res;
+
+  const u = reqUrl(input);
+  if (u.includes('/auth/v1/')) return res; // 로그인/토큰갱신 실패는 로그인 폼이 안내한다
+  if (res.status === 406) return res;      // .single() 의 "행 없음"
+
+  let code = '';
+  let detail = '';
+  try {
+    const body = (await res.clone().json()) as { message?: string; hint?: string; code?: string } | null;
+    code = body?.code ?? '';
+    detail = [body?.message, body?.hint].filter(Boolean).join(' — ');
+  } catch {
+    /* 본문이 JSON 이 아니면 상태코드만 쓴다 */
   }
+  if (code === 'PGRST116') return res;     // 위 406 과 같은 상황(버전에 따라 400 으로 온다)
+
+  console.error('[supabase]', res.status, u, code, detail);
+  dbErrorHandler?.(`${res.status} ${detail || res.statusText}`);
   return res;
 };
 
