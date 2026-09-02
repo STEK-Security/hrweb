@@ -74,6 +74,8 @@ live_asset() {
 before="$BEFORE"
 changed=0
 asset=""
+TMPJS=$(mktemp)
+trap 'rm -f "$TMPJS"' EXIT
 # 해시가 바뀐 직후에도 컨테이너 교체 중이면 자산 요청이 404/부분응답으로 온다.
 # 그걸 "키 없음"으로 단정하면 정상 배포를 실패로 보고한다(실제로 그랬다) → 재시도한다.
 for i in $(seq 1 40); do
@@ -82,8 +84,11 @@ for i in $(seq 1 40); do
   if [ -n "$a" ] && [ "$a" != "$before" ]; then
     changed=1
     asset="$a"
-    if curl -fsk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
-        | grep -q 'eyJhbGciOiJIUzI1NiI'; then
+    # ★ 파이프로 grep -q 하면 안 된다. grep 이 첫 매치에서 바로 끝나 curl 이 SIGPIPE 로
+    #   죽고, pipefail 때문에 "매치했는데도" 파이프라인이 실패로 판정된다(실제로 40회 전부
+    #   오탐했다). 파일로 받아서 검사한다.
+    if curl -fsk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 \
+         "https://hr.stek.kr/$asset" -o "$TMPJS" && grep -q 'eyJhbGciOiJIUzI1NiI' "$TMPJS"; then
       echo "✅ https://hr.stek.kr 반영 완료 ($asset, supabase 연결됨)"
       exit 0
     fi
