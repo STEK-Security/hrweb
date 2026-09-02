@@ -21,6 +21,10 @@ if [ -n "$(git status --porcelain -- src Dockerfile nginx.conf package.json)" ];
   exit 1
 fi
 
+BEFORE=$(curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ 2>/dev/null \
+  | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true)
+echo "▶ 현재 번들: ${BEFORE:-없음}"
+
 DOKPLOY_URL="$DOKPLOY_URL" DOKPLOY_API_KEY="$DOKPLOY_API_KEY" AID="$AID" python3 - <<'PY'
 import json, os, subprocess
 U, K, AID = os.environ['DOKPLOY_URL'], os.environ['DOKPLOY_API_KEY'], os.environ['AID']
@@ -51,22 +55,27 @@ print("▶ 배포 트리거 (GitHub main → Dockerfile 빌드)")
 api('application.deploy', {"applicationId": AID})
 PY
 
-echo "▶ 반영 확인 (빌드에 수 분 소요 — 실패 시 잠시 후 다시 실행)"
+echo "▶ 반영 확인 (빌드에 수 분 소요)"
+# 배포 전 번들 해시를 먼저 잡아둔다. 해시가 "바뀐" 뒤에 검사해야 한다 —
+# 바로 검사하면 아직 살아있는 이전 번들(또는 교체 중 404)을 새 빌드로 착각한다.
+live_asset() {
+  curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ 2>/dev/null \
+    | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true
+}
+before="$BEFORE"
 for i in $(seq 1 40); do
   sleep 15
-  body=$(curl -sk --max-time 15 --resolve hr.stek.kr:443:172.30.60.21 https://hr.stek.kr/ || true)
-  # grep 미스는 정상 상황(빌드 중)이다. set -e 가 죽지 않게 || true 를 반드시 붙인다.
-  asset=$(printf '%s' "$body" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true)
-  if [ -n "$asset" ]; then
-    if curl -sk --max-time 30 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
+  asset=$(live_asset)
+  if [ -n "$asset" ] && [ "$asset" != "$before" ]; then
+    if curl -sk --max-time 60 --resolve hr.stek.kr:443:172.30.60.21 "https://hr.stek.kr/$asset" \
         | grep -q 'eyJhbGciOiJIUzI1NiI'; then
       echo "✅ https://hr.stek.kr 반영 완료 ($asset, supabase 연결됨)"
       exit 0
     fi
-    echo "  ✗ $asset 에 anon key 가 없습니다 — buildArgs 주입 실패"
+    echo "✗ $asset 에 anon key 가 없습니다 — Dokploy buildArgs 주입 실패"
     exit 1
   fi
-  printf '  ...대기 %d/40\n' "$i"
+  printf '  ...빌드 대기 %d/40 (현재 %s)\n' "$i" "${asset:-없음}"
 done
-echo "✗ 시간 내 반영 확인 실패. Dokploy 에서 빌드 로그를 확인하세요."
+echo "✗ 시간 내 번들 교체를 확인하지 못했습니다. Dokploy 빌드 로그를 확인하세요."
 exit 1
