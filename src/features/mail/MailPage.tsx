@@ -9,8 +9,13 @@ import { sendMailNow, flushMailQueue } from '../../lib/mail';
 import { logEvent } from '../../lib/audit';
 import { EmployeePicker } from '../../components/EmployeePicker';
 
-/** 발송 직전 최소 검증용. RFC 완전 준수가 목적이 아니라 SMTP 가 문법오류로 뱉을 값을 거르는 용도. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * 그룹ID 는 그룹웨어가 내려준 메일주소를 **원본 그대로** 쓴다(도메인 보정·정규화 없음).
+ * 그래서 검증도 최소한만 한다 — `@` 없거나 공백이 섞인 값만 거른다(그 값은 SMTP 가
+ * `RCPT TO:<...>` 문법오류로 거부해 조용히 실패한다). 사내 주소처럼 TLD 없는
+ * `user@intranet` 도 메일서버가 받으면 그대로 나가야 하므로 점(.)은 요구하지 않는다.
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;
 
 interface Recipient {
   empId: string;
@@ -72,12 +77,12 @@ export function MailPage() {
       setMessage({ type: 'error', text: `${emp._name}님은 그룹ID(메일주소)가 없어 제외되었습니다.` });
       return;
     }
-    // 그룹웨어에 따라 그룹ID 가 메일주소가 아닌 로그인 아이디(예: mjkim)로 들어와 있을 수 있다.
-    // 도메인을 임의로 붙이면 엉뚱한 곳으로 나가므로, 여기서 걸러 인사팀이 원본을 고치게 한다.
+    // 도메인을 임의로 붙이지 않는다 — 그룹웨어 원본을 그대로 쓴다. `@` 조차 없는 값만
+    // 여기서 걸러 인사팀이 원본을 고치게 한다(그대로 보내면 SMTP 단계에서 조용히 실패).
     if (!EMAIL_RE.test(email)) {
       setMessage({
         type: 'error',
-        text: `${emp._name}님의 그룹ID("${email}")가 메일주소 형식이 아닙니다. 직원명부에서 그룹ID를 수정하세요.`,
+        text: `${emp._name}님의 그룹ID("${email}")가 메일주소가 아닙니다. 그룹웨어 원본을 확인하세요.`,
       });
       return;
     }
