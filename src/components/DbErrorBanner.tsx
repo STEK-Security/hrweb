@@ -6,14 +6,14 @@
  */
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
-import { setDbErrorHandler, supabaseConfigured, supabaseInfo } from '../lib/supabase';
+import { clearDbErrorHandler, setDbErrorHandler, supabaseConfigured, supabaseInfo } from '../lib/supabase';
 
 export function DbErrorBanner() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setDbErrorHandler(setError);
-    return () => setDbErrorHandler(null);
+    return () => clearDbErrorHandler(setError);
   }, []);
 
   if (!supabaseConfigured) {

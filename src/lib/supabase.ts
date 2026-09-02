@@ -16,9 +16,13 @@ export const supabaseConfigured = !!(url && anon);
 
 type DbErrorHandler = (message: string) => void;
 let dbErrorHandler: DbErrorHandler | null = null;
-/** App 상단 배너가 구독한다. 마지막 등록자만 유효(단일 배너). */
-export function setDbErrorHandler(fn: DbErrorHandler | null) {
+/** 상단 배너가 구독한다(단일 배너 전제 — 로그인화면/앱화면은 동시에 뜨지 않는다). */
+export function setDbErrorHandler(fn: DbErrorHandler) {
   dbErrorHandler = fn;
+}
+/** 자기가 등록한 핸들러일 때만 해제한다 — 언마운트 순서가 엇갈려도 남의 것을 지우지 않는다. */
+export function clearDbErrorHandler(fn: DbErrorHandler) {
+  if (dbErrorHandler === fn) dbErrorHandler = null;
 }
 
 const reqUrl = (input: RequestInfo | URL): string =>
