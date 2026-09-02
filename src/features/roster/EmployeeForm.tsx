@@ -6,10 +6,17 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { getEmployee, createEmployee, updateEmployee, setSensitive, softDeleteEmployee } from '../../lib/db';
+import {
+  getEmployee,
+  createEmployee,
+  updateEmployee,
+  setSensitive,
+  softDeleteEmployee,
+  getSensitiveMasked,
+} from '../../lib/db';
 import { logEvent } from '../../lib/audit';
 import { today } from '../../excel/derive';
-import { FIELD_GROUPS } from './EmployeeDrawer';
+import { FIELD_GROUPS, formatSensitiveValue } from './EmployeeDrawer';
 
 interface EmployeeFormProps {
   /** null = 신규 등록 */
@@ -83,6 +90,11 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
   const [loadFailed, setLoadFailed] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [sensitive, setSensitiveForm] = useState<Record<string, string>>({});
+  /**
+   * 현재 저장된 민감값(마스킹). 입력칸은 "변경할 것만 입력" 이라 비어 있어야 맞지만, 그러면
+   * 수정 화면이 통째로 빈칸처럼 보여 무엇이 들어있는지 알 수 없었다 → 칸 아래에 현재값을 띄운다.
+   */
+  const [maskedCurrent, setMaskedCurrent] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     if (!employeeId) return;
@@ -105,10 +117,20 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
       }
       setLoading(false);
     });
+    setMaskedCurrent(null);
+    getSensitiveMasked(employeeId).then((m) => {
+      if (!cancelled) setMaskedCurrent(m);
+    });
     return () => {
       cancelled = true;
     };
   }, [employeeId]);
+
+  /** 입력칸 아래에 찍을 "현재: ..." 문구. 값이 없으면 null. */
+  const currentOf = (key: string, kind: 'text' | 'acct' | 'addr'): string | null => {
+    if (!isEdit || !maskedCurrent) return null;
+    return formatSensitiveValue(kind, maskedCurrent[key]) || null;
+  };
 
   const setField = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
   const setSensitiveField = (key: string, value: string) =>
@@ -357,6 +379,7 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
               <h4 className="text-xs font-bold text-rose-800 mb-1">민감정보</h4>
               <p className="text-[10px] text-rose-600/80 mb-3">
                 비워두면 기존 값이 그대로 유지됩니다. 변경할 항목만 입력하세요.
+                {isEdit && ' 칸 아래 "현재"는 지금 저장된 값(마스킹)입니다.'}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 {SENSITIVE_FIELDS.map((f) => {
@@ -372,13 +395,23 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                           onChange={(e) => setSensitiveField(f.key, e.target.value)}
                           className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
+                        {currentOf(f.key, 'text') && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                            현재: {currentOf(f.key, 'text')}
+                          </p>
+                        )}
                       </div>
                     );
                   }
                   if (f.kind === 'acct') {
                     return (
                       <div key={f.key} className="col-span-2 grid grid-cols-3 gap-2">
-                        <div className="col-span-3 text-[11px] text-slate-500">{f.label}</div>
+                        <div className="col-span-3 text-[11px] text-slate-500">
+                          {f.label}
+                          {currentOf(f.key, 'acct') && (
+                            <span className="ml-1.5 text-slate-400">현재: {currentOf(f.key, 'acct')}</span>
+                          )}
+                        </div>
                         <input
                           type="text"
                           placeholder="은행"
@@ -408,7 +441,12 @@ export function EmployeeForm({ employeeId, onClose, onSaved }: EmployeeFormProps
                   }
                   return (
                     <div key={f.key} className="col-span-2 grid grid-cols-3 gap-2">
-                      <div className="col-span-3 text-[11px] text-slate-500">{f.label}</div>
+                      <div className="col-span-3 text-[11px] text-slate-500">
+                        {f.label}
+                        {currentOf(f.key, 'addr') && (
+                          <span className="ml-1.5 text-slate-400">현재: {currentOf(f.key, 'addr')}</span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         placeholder="우편번호"

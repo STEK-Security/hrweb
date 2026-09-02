@@ -18,13 +18,53 @@ interface EmployeeDrawerProps {
 }
 
 type MaskedAcct = { bank?: string; number?: string; owner?: string } | null;
-type Masked = {
-  ssn?: string | null;
-  salary_acct?: MaskedAcct;
-  expense_acct?: MaskedAcct;
-  phone?: string | null;
-  email?: string | null;
-} | null;
+type MaskedAddr = { postal?: string; address?: string } | null;
+type Masked = Record<string, unknown> | null;
+
+/**
+ * get_sensitive_masked(0005) 가 돌려주는 8항목 전부. 예전엔 이 중 5개만 화면에 있었고
+ * 비상연락망·현주소·등본주소는 서버가 보내는데도 렌더되지 않아 아예 볼 수 없었다.
+ * reveal 화이트리스트(0005 reveal_sensitive_field)는 email 을 제외한 7개다 —
+ * 개인메일은 정책상 처음부터 평문으로 내려온다.
+ */
+export type SensitiveKind = 'text' | 'acct' | 'addr';
+const SENSITIVE_ROWS: { key: string; label: string; kind: SensitiveKind; revealable: boolean }[] = [
+  { key: 'email', label: '개인메일', kind: 'text', revealable: false },
+  { key: 'ssn', label: '주민번호', kind: 'text', revealable: true },
+  { key: 'phone', label: '휴대폰', kind: 'text', revealable: true },
+  { key: 'emergency', label: '비상연락망', kind: 'text', revealable: true },
+  { key: 'salary_acct', label: '급여계좌', kind: 'acct', revealable: true },
+  { key: 'expense_acct', label: '경비계좌', kind: 'acct', revealable: true },
+  { key: 'addr', label: '현주소', kind: 'addr', revealable: true },
+  { key: 'reg_addr', label: '등본주소', kind: 'addr', revealable: true },
+];
+
+const fmtAcct = (a: MaskedAcct): string =>
+  a ? [a.bank, a.number, a.owner ? `(${a.owner})` : null].filter(Boolean).join(' ') : '';
+const fmtAddr = (a: MaskedAddr): string =>
+  a ? [a.postal ? `(${a.postal})` : null, a.address].filter(Boolean).join(' ') : '';
+
+/**
+ * 민감값 표기. 마스킹 조회(get_sensitive_masked)는 객체로 오고, "보이기"(reveal_sensitive_field)
+ * 원본은 계좌/주소가 JSON 문자열로 온다. 두 경로를 같은 규칙으로 찍기 위해 한 곳에 둔다.
+ * EmployeeForm 의 "현재 저장값" 표시도 이 함수를 쓴다.
+ */
+export const formatSensitiveValue = (kind: SensitiveKind, value: unknown): string => {
+  if (value == null || value === '') return '';
+  if (kind === 'text') return String(value);
+  const obj =
+    typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value) as Record<string, string>;
+          } catch {
+            return null;
+          }
+        })()
+      : (value as Record<string, string>);
+  if (!obj) return String(value);
+  return kind === 'acct' ? fmtAcct(obj as MaskedAcct) : fmtAddr(obj as MaskedAddr);
+};
 
 export const FIELD_GROUPS: { title: string; fields: [string, string][] }[] = [
   {
@@ -150,7 +190,7 @@ export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerPr
 
   if (!employeeId) return null;
 
-  const handleReveal = async (field: 'phone' | 'salary_acct' | 'expense_acct' | 'ssn') => {
+  const handleReveal = async (field: string) => {
     setRevealing((r) => ({ ...r, [field]: true }));
     const value = await revealField(employeeId, field);
     setRevealed((r) => ({ ...r, [field]: value }));
@@ -158,14 +198,7 @@ export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerPr
     // 서버 reveal_sensitive_field RPC 가 이미 audit_log 에 기록하므로 여기서 다시 로깅하지 않는다(이중로깅 방지).
   };
 
-  const parseAcct = (raw: string | null): MaskedAcct => {
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return { number: raw };
-    }
-  };
+  const fmt = formatSensitiveValue;
 
   return (
     <div
@@ -241,80 +274,35 @@ export function EmployeeDrawer({ employeeId, onClose, onEdit }: EmployeeDrawerPr
                 ) : maskedLoading ? (
                   <p className="text-xs text-slate-400">불러오는 중...</p>
                 ) : !masked ? (
-                  <p className="text-xs text-slate-400">민감정보를 불러올 수 없습니다.</p>
+                  <p className="text-xs text-rose-700 font-semibold">
+                    민감정보를 불러오지 못했습니다. 권한·네트워크를 확인하세요.
+                  </p>
                 ) : (
                   <div className="space-y-3">
-                    <Field label="개인메일" value={masked.email} />
-
-                    <div>
-                      <span className="text-[11px] text-slate-500 block mb-0.5">주민번호</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-800 font-mono">
-                          {revealed.ssn ?? masked.ssn ?? '-'}
-                        </span>
-                        {masked.ssn && !revealed.ssn && (
-                          <RevealButton onClick={() => handleReveal('ssn')} revealing={!!revealing.ssn} />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[11px] text-slate-500 block mb-0.5">휴대폰</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-800 font-mono">
-                          {revealed.phone ?? masked.phone ?? '-'}
-                        </span>
-                        {masked.phone && !revealed.phone && (
-                          <RevealButton onClick={() => handleReveal('phone')} revealing={!!revealing.phone} />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[11px] text-slate-500 block mb-0.5">급여계좌</span>
-                      {revealed.salary_acct ? (
-                        (() => {
-                          const acct = parseAcct(revealed.salary_acct);
-                          return (
-                            <span className="text-sm font-semibold text-slate-800">
-                              {acct?.bank ?? ''} {acct?.number ?? ''} ({acct?.owner ?? '-'})
+                    {SENSITIVE_ROWS.map((row) => {
+                      const shown = fmt(row.kind, revealed[row.key] ?? masked[row.key]);
+                      const hasValue = !!fmt(row.kind, masked[row.key]);
+                      return (
+                        <div key={row.key}>
+                          <span className="text-[11px] text-slate-500 block mb-0.5">{row.label}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`text-sm font-semibold ${
+                                shown ? 'text-slate-800' : 'text-slate-400'
+                              } ${row.kind === 'text' ? 'font-mono' : ''}`}
+                            >
+                              {shown || '-'}
                             </span>
-                          );
-                        })()
-                      ) : masked.salary_acct ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-800">
-                            {masked.salary_acct.bank} {masked.salary_acct.number} ({masked.salary_acct.owner})
-                          </span>
-                          <RevealButton onClick={() => handleReveal('salary_acct')} revealing={!!revealing.salary_acct} />
+                            {row.revealable && hasValue && revealed[row.key] == null && (
+                              <RevealButton
+                                onClick={() => handleReveal(row.key)}
+                                revealing={!!revealing[row.key]}
+                              />
+                            )}
+                          </div>
                         </div>
-                      ) : (
-                        <span className="text-sm text-slate-400">-</span>
-                      )}
-                    </div>
-
-                    <div>
-                      <span className="text-[11px] text-slate-500 block mb-0.5">경비계좌</span>
-                      {revealed.expense_acct ? (
-                        (() => {
-                          const acct = parseAcct(revealed.expense_acct);
-                          return (
-                            <span className="text-sm font-semibold text-slate-800">
-                              {acct?.bank ?? ''} {acct?.number ?? ''} ({acct?.owner ?? '-'})
-                            </span>
-                          );
-                        })()
-                      ) : masked.expense_acct ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-800">
-                            {masked.expense_acct.bank} {masked.expense_acct.number} ({masked.expense_acct.owner})
-                          </span>
-                          <RevealButton onClick={() => handleReveal('expense_acct')} revealing={!!revealing.expense_acct} />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-slate-400">-</span>
-                      )}
-                    </div>
+                      );
+                    })}
 
                     <p className="text-[10px] text-rose-600/80 pt-1 border-t border-rose-200/70">
                       "보이기" 클릭 시 열람 이력이 감사로그에 기록됩니다.
