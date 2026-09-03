@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActiveMenu } from '../types';
 import {
   LayoutDashboard,
@@ -18,8 +18,10 @@ import {
   UserCog,
   Settings,
   Mail,
+  KeyRound,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
+import { PasswordChangeModal } from './PasswordChangeModal';
 
 interface NavbarProps {
   activeMenu: ActiveMenu;
@@ -56,6 +58,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdmin,
   onSelectEmployee,
 }) => {
+  // 비밀번호 변경 모달은 Navbar 가 직접 연다 — App 까지 prop 을 뚫을 이유가 없다(로그인 상태에서만 노출).
+  const [pwOpen, setPwOpen] = useState(false);
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
       id: '대시보드',
@@ -241,6 +245,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               {onLogout && (
                 <button
                   type="button"
+                  onClick={() => setPwOpen(true)}
+                  title="비밀번호 변경"
+                  aria-label="비밀번호 변경"
+                  className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4" />
+                </button>
+              )}
+              {onLogout && (
+                <button
+                  type="button"
                   onClick={onLogout}
                   title="로그아웃"
                   aria-label="로그아웃"
@@ -276,6 +291,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
       </div>
+      {pwOpen && <PasswordChangeModal onClose={() => setPwOpen(false)} />}
     </header>
   );
 };

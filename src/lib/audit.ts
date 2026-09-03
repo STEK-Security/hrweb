@@ -40,7 +40,8 @@ export type AuditAction =
   | 'update_evaluation'
   | 'delete_evaluation'
   | 'toggle_account'
-  | 'update_settings';
+  | 'update_settings'
+  | 'change_password';
 
 export interface LogEventOptions {
   targetId?: string | null;
