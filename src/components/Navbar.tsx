@@ -19,6 +19,7 @@ import {
   Settings,
   Mail,
   KeyRound,
+  ChevronDown,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 import { PasswordChangeModal } from './PasswordChangeModal';
@@ -60,6 +61,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   // 비밀번호 변경 모달은 Navbar 가 직접 연다 — App 까지 prop 을 뚫을 이유가 없다(로그인 상태에서만 노출).
   const [pwOpen, setPwOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // 로그인 여부와 무관하게 같은 프로필 표기를 쓴다(메뉴만 로그인 시 붙는다).
+  const userBlock = (
+    <>
+      <div className="text-right hidden sm:block">
+        <p className="text-xs font-bold text-slate-900 leading-tight">
+          {user ? user.name : '김인사 팀장'}
+        </p>
+        <p className="text-[10px] text-slate-500">
+          {user ? `${user.dept} · ${user.role}` : '인사전략처'}
+        </p>
+      </div>
+      <div className="w-9 h-9 rounded-full bg-slate-200 border-2 border-white shadow-xs flex items-center justify-center text-slate-600 font-bold text-xs">
+        {(user ? user.name : '김')[0]}
+      </div>
+    </>
+  );
+
   const menuItems: { id: ActiveMenu; label: string; icon: React.ReactNode }[] = [
     {
       id: '대시보드',
@@ -229,42 +248,72 @@ export const Navbar: React.FC<NavbarProps> = ({
               </select>
             )}
 
-            {/* Sleek User Profile Avatar */}
-            <div className="flex items-center gap-3 pl-1">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-slate-900 leading-tight">
-                  {user ? user.name : '김인사 팀장'}
-                </p>
-                <p className="text-[10px] text-slate-500">
-                  {user ? `${user.dept} · ${user.role}` : '인사전략처'}
-                </p>
-              </div>
-              <div className="w-9 h-9 rounded-full bg-slate-200 border-2 border-white shadow-xs flex items-center justify-center text-slate-600 font-bold text-xs">
-                {(user ? user.name : '김')[0]}
-              </div>
-              {onLogout && (
+            {/* 사용자 영역 — 아바타 클릭 시 계정 메뉴. 아이콘만 두면 비밀번호 변경을 못 찾는다. */}
+            {onLogout ? (
+              <div
+                className="relative"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setMenuOpen(false);
+                }}
+              >
                 <button
                   type="button"
-                  onClick={() => setPwOpen(true)}
-                  title="비밀번호 변경"
-                  aria-label="비밀번호 변경"
-                  className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className="flex items-center gap-2.5 pl-1 pr-1.5 py-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  <KeyRound className="w-4 h-4" />
+                  {userBlock}
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
+                  />
                 </button>
-              )}
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  title="로그아웃"
-                  aria-label="로그아웃"
-                  className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+
+                {menuOpen && (
+                  <>
+                    {/* ponytail: 바깥 클릭 닫기를 document 리스너 대신 투명 오버레이로 — 정리할 이펙트가 없다. */}
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label="계정 메뉴 닫기"
+                      onClick={() => setMenuOpen(false)}
+                      className="fixed inset-0 z-40 cursor-default"
+                    />
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1.5 z-50 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setPwOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-700 transition-colors cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        비밀번호 변경
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer border-t border-slate-100"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        로그아웃
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 pl-1">{userBlock}</div>
+            )}
           </div>
         </div>
 
