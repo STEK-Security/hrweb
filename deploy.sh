@@ -82,6 +82,17 @@ if missing:
 
 before = newest_deployment()
 before_id = (before or {}).get('deploymentId')
+
+def live_asset():
+    index = live()
+    if not index:
+        return None
+    i = index.find('assets/index-')
+    return index[i:index.find('"', i)] if i >= 0 else None
+
+# 배포 전 번들 해시. 배포 레코드가 done 이어도 컨테이너 교체 전이면 구 번들이 서빙되는데,
+# 구 번들에도 anon key 는 들어있어서 "키 있음"만 보면 그대로 성공으로 오판한다(실제로 그랬다).
+asset_before = live_asset()
 print(f"▶ 배포 트리거 (GitHub main → Dockerfile 빌드). 직전 배포: {before_id or '없음'}")
 api('application.deploy', {"applicationId": AID})
 
@@ -105,20 +116,31 @@ if dep.get('status') == 'error':
     sys.exit(f"✗ 빌드 실패: {title}\n  {dep.get('errorMessage') or '(errorMessage 없음)'}")
 print(f"▶ 빌드 완료: {title}")
 
-# 컨테이너 교체가 끝나야 새 자산이 잡힌다. 라이브 번들에 anon key 가 실제로 들어갔는지 확인.
-for _ in range(24):          # 최대 2분
-    index = live()
-    if index:
-        i = index.find('assets/index-')
-        if i >= 0:
-            asset = index[i:index.find('"', i)]
-            js = live(asset, binary=True)
-            # ★ curl | grep -q 로 하면 grep 이 첫 매치에서 끝나 curl 이 SIGPIPE 로 죽고
-            #   pipefail 이 매치를 실패로 뒤집는다. 그래서 파이썬에서 내용을 직접 본다.
-            if js and ANON_MARK.encode() in js:
-                print(f"✅ https://{HOST} 반영 완료 ({asset}, {len(js)} bytes, supabase 연결됨)")
-                sys.exit(0)
+# 컨테이너 교체가 끝날 때까지 기다린다. 판정 기준은 "번들이 실제로 바뀌었는가" 다.
+asset = None
+for _ in range(36):          # 최대 3분
+    asset = live_asset()
+    if asset and asset != asset_before:
+        break
     time.sleep(5)
 
-sys.exit(f"✗ 라이브 번들에서 anon key 를 확인하지 못했습니다 — buildArgs 주입 또는 컨테이너 교체 확인 필요.")
+if asset and asset == asset_before:
+    # 프론트 소스를 안 건드린 커밋이면 Vite 해시가 그대로다. 성공이라고 단정하지 않고 사실만 말한다.
+    print(f"⚠ 번들이 이전과 동일하다({asset}). 프론트 변경이 없는 커밋이면 정상이고, "
+          f"아니면 컨테이너 교체가 아직 안 끝난 것이다.")
+    sys.exit(0)
+if not asset:
+    sys.exit("✗ 라이브 index.html 에서 번들을 찾지 못했습니다.")
+
+# 새 번들에 anon key 가 실제로 들어갔는지 확인(buildArgs 주입 실패 탐지).
+# ★ curl | grep -q 로 하면 grep 이 첫 매치에서 끝나 curl 이 SIGPIPE 로 죽고
+#   pipefail 이 매치를 실패로 뒤집는다. 그래서 파이썬에서 내용을 직접 본다.
+for _ in range(12):          # 교체 직후 404/부분응답 대비
+    js = live(asset, binary=True)
+    if js and ANON_MARK.encode() in js:
+        print(f"✅ https://{HOST} 반영 완료 ({asset}, {len(js)} bytes, supabase 연결됨)")
+        sys.exit(0)
+    time.sleep(5)
+
+sys.exit(f"✗ 새 번들 {asset} 에서 anon key 를 확인하지 못했습니다 — buildArgs 주입 실패 의심.")
 PY
