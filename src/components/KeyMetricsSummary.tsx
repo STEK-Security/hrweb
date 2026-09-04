@@ -29,8 +29,6 @@ const INPUT_CLS =
 const deltaColor = (v: string, plus: string, minus: string) =>
   v.startsWith('+') ? plus : v.startsWith('-') ? minus : 'text-slate-800';
 
-const Disabled = () => <span className="text-slate-400 font-bold select-none">-</span>;
-
 /** 자동 계산 열 헤더: '자동' 마이크로 배지로 입력 칸이 아님을 표시 */
 const AutoTh = ({ label }: { label: string }) => (
   <th scope="col" className="py-2.5 px-3 text-center w-28 bg-slate-100/70">
@@ -204,9 +202,8 @@ export function KeyMetricsSummary({ period }: Props) {
               </tr>
             ) : (
               rows.map((row) => {
-                const isTurnover = row.metric_key === 'turnover_rate';
-                const change = isTurnover ? '-' : calcDelta(row.this_month, row.last_month);
-                const yoy = isTurnover ? '-' : calcDelta(row.this_month, row.last_year_month);
+                const change = calcDelta(row.this_month, row.last_month);
+                const yoy = calcDelta(row.this_month, row.last_year_month);
                 const input = (field: InputField, extra: string) => (
                   <input
                     type="text"
@@ -225,14 +222,14 @@ export function KeyMetricsSummary({ period }: Props) {
                       )}
                     </td>
                     <td className="py-2 px-3 text-center">
-                      {isTurnover ? <Disabled /> : isEditing ? input('this_month', 'font-bold text-blue-700') : (
+                      {isEditing ? input('this_month', 'font-bold text-blue-700') : (
                         <span className="font-bold text-blue-700">{row.this_month || '-'}</span>
                       )}
                     </td>
                     <AutoCell
                       value={change}
-                      editing={isEditing && !isTurnover}
-                      cls={isTurnover ? 'text-slate-400 font-bold' : deltaColor(change, 'text-emerald-700', 'text-rose-600')}
+                      editing={isEditing}
+                      cls={deltaColor(change, 'text-emerald-700', 'text-rose-600')}
                     />
                     <td className="py-2 px-3 text-center">
                       {isEditing ? input('last_year_month', 'font-semibold text-slate-800') : (
@@ -241,8 +238,8 @@ export function KeyMetricsSummary({ period }: Props) {
                     </td>
                     <AutoCell
                       value={yoy}
-                      editing={isEditing && !isTurnover}
-                      cls={isTurnover ? 'text-slate-400 font-bold' : deltaColor(yoy, 'text-blue-700', 'text-amber-600')}
+                      editing={isEditing}
+                      cls={deltaColor(yoy, 'text-blue-700', 'text-amber-600')}
                     />
                   </tr>
                 );
