@@ -56,6 +56,9 @@ const IMPORTANCE_STYLE: Record<NoteImportance, { badge: string; dot: string }> =
 
 const fmtDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
 
+/** 작성자 표기. 이름이 없으면(프로필 미입력 등) 이메일 아이디 부분으로 대체한다. */
+const authorLabel = (n: DashboardNote) => n.author_name || n.author_email?.split('@')[0] || '알 수 없음';
+
 function ImportanceBadge({ level }: { level: NoteImportance }) {
   const s = IMPORTANCE_STYLE[level];
   return (
@@ -132,6 +135,9 @@ export function DashboardNotesPanel({ scope, period, accent }: Props) {
             <li key={n.id} className="flex items-center gap-2 px-3 py-1.5 text-xs" title={n.content}>
               <ImportanceBadge level={n.importance} />
               <span className="flex-1 truncate text-slate-800">{n.content}</span>
+              <span className="text-[10px] text-slate-500 font-semibold shrink-0" title={n.author_email ?? undefined}>
+                {authorLabel(n)}
+              </span>
               <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtDate(n.created_at)}</span>
             </li>
           ))
@@ -441,7 +447,8 @@ function NotesModal({ scope, period, accent, onClose, onChanged }: ModalProps) {
                       <ImportanceBadge level={n.importance} />
                       <p className="flex-1 text-slate-800 leading-relaxed whitespace-pre-line break-words">{n.content}</p>
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] text-slate-400 font-mono mr-1" title={n.author_email ?? undefined}>
+                        <span className="text-[10px] text-slate-400 font-mono mr-1 text-right" title={n.author_email ?? undefined}>
+                          <span className="block font-sans font-semibold text-slate-600">{authorLabel(n)}</span>
                           {periodFilter === 'all' ? `${n.period} · ` : ''}
                           {fmtDate(n.created_at)}
                         </span>

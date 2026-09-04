@@ -750,9 +750,28 @@ export interface DashboardNote {
   scope: NoteScope;
   content: string;
   importance: NoteImportance;
+  created_by: string | null;
+  /** 작성자 이름(profiles.name). 저장하지 않고 조회 때 붙인다 — 개명이 반영되게. */
+  author_name: string | null;
   author_email: string | null;
   created_at: string;
   updated_at: string;
+}
+
+type NoteRow = Omit<DashboardNote, 'author_name'>;
+
+/**
+ * 이슈 행에 작성자 이름을 붙인다. profiles 는 "profiles self read" 정책이
+ * (id = auth.uid() or is_hr()) 이고 is_hr() 이 인증된 전원이라 남의 이름도 읽힌다.
+ * 이름을 이슈 행에 복제하지 않으므로 나중에 개명해도 목록에 그대로 반영된다.
+ * 이름 조회가 실패하면 이슈 자체는 살리고 이름만 null 로 둔다(화면은 이메일로 대체).
+ */
+async function withAuthorNames(rows: NoteRow[]): Promise<DashboardNote[]> {
+  const ids = [...new Set(rows.map((r) => r.created_by).filter((v): v is string => !!v))];
+  if (!supabase || ids.length === 0) return rows.map((r) => ({ ...r, author_name: null }));
+  const { data } = await supabase.from('profiles').select('id,name').in('id', ids);
+  const nameById = new Map((data ?? []).map((p) => [p.id as string, (p.name as string | null) ?? null]));
+  return rows.map((r) => ({ ...r, author_name: (r.created_by && nameById.get(r.created_by)) || null }));
 }
 
 /** 핵심지표 요약(해당 월) 조회. 증감·YoY증감은 저장하지 않는 파생값이라 여기서 오지 않는다. */
@@ -853,7 +872,7 @@ export async function listDashboardNotes(
   if (opts?.limit) query = query.limit(opts.limit);
   const { data, error } = await query;
   if (error || !data) return [];
-  return data as DashboardNote[];
+  return withAuthorNames(data as NoteRow[]);
 }
 
 /** 대시보드 이슈 메모 등록. 작성자 이메일은 현재 세션에서 채운다. 실패 시 null. */
@@ -871,7 +890,7 @@ export async function addDashboardNote(input: {
     .select()
     .single();
   if (error || !data) return null;
-  return data as DashboardNote;
+  return (await withAuthorNames([data as NoteRow]))[0];
 }
 
 /** 이슈 메모 수정. RLS 로 막혀 0행 갱신되면 에러 없이 조용히 실패하므로 반환행으로 확인한다. */
