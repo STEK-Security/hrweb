@@ -12,12 +12,28 @@ interface Props {
   period: string;
 }
 
-/** 해당 월에 저장된 행이 없을 때 입력용 빈 골격. metric_key 는 마이그레이션 시드와 동일. */
+/**
+ * 표시 라벨은 여기서 만든다. DB 에도 label 컬럼이 있지만 그걸 그대로 쓰면
+ * 이미 저장된 행의 옛 이름이 계속 보여서(예: '이직률'), 이름을 바꿀 때마다
+ * UPDATE 마이그레이션이 필요해진다. metric_key 가 유일한 키다.
+ */
+const METRIC_LABELS: Record<string, string> = {
+  closing_headcount: '기말 재직인원(명)',
+  new_hires: '입사자 수',
+  leavers: '퇴사자 수',
+  turnover_rate: '퇴사율',
+  labor_cost: '총 노무비(천원)',
+};
+
+/** metric_key 에 매핑이 없으면(향후 항목 추가 시) DB 라벨로 대체한다. */
+const labelOf = (r: KeyMetricRow) => METRIC_LABELS[r.metric_key] ?? r.label;
+
+/** 해당 월에 저장된 행이 없을 때 입력용 빈 골격. metric_key 는 0031 스키마와 동일. */
 const EMPTY_ROWS: KeyMetricRow[] = [
   { metric_key: 'closing_headcount', label: '기말 재직인원(명)', last_month: '', this_month: '', last_year_month: '', sort_order: 1 },
   { metric_key: 'new_hires', label: '입사자 수', last_month: '', this_month: '', last_year_month: '', sort_order: 2 },
   { metric_key: 'leavers', label: '퇴사자 수', last_month: '', this_month: '', last_year_month: '', sort_order: 3 },
-  { metric_key: 'turnover_rate', label: '이직률', last_month: '', this_month: '', last_year_month: '', sort_order: 4 },
+  { metric_key: 'turnover_rate', label: '퇴사율', last_month: '', this_month: '', last_year_month: '', sort_order: 4 },
   { metric_key: 'labor_cost', label: '총 노무비(천원)', last_month: '', this_month: '', last_year_month: '', sort_order: 5 },
 ];
 
@@ -209,13 +225,13 @@ export function KeyMetricsSummary({ period }: Props) {
                     type="text"
                     value={row[field]}
                     onChange={(e) => handleCellChange(row.metric_key, field, e.target.value)}
-                    aria-label={`${row.label} ${field === 'last_month' ? '전월' : field === 'this_month' ? '당월' : '전년동월'}`}
+                    aria-label={`${labelOf(row)} ${field === 'last_month' ? '전월' : field === 'this_month' ? '당월' : '전년동월'}`}
                     className={`${INPUT_CLS} ${extra}`}
                   />
                 );
                 return (
                   <tr key={row.metric_key} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-2 px-3.5 font-bold text-slate-900 bg-slate-50/30">{row.label}</td>
+                    <td className="py-2 px-3.5 font-bold text-slate-900 bg-slate-50/30">{labelOf(row)}</td>
                     <td className="py-2 px-3 text-center">
                       {isEditing ? input('last_month', 'font-semibold text-slate-800') : (
                         <span className="font-semibold text-slate-800">{row.last_month || '-'}</span>

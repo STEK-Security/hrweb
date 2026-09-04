@@ -738,6 +738,8 @@ export interface RecruitmentPlanRow {
   document_passed_count: number;
   interview_count: number;
   final_passed_count: number;
+  /** 충원율. 수기 입력이라 '80%'·'진행중' 같은 서식/메모를 담을 수 있게 text 다. */
+  fill_rate: string;
   sort_order: number;
 }
 
@@ -802,12 +804,14 @@ export async function listRecruitmentPlan(period: string): Promise<RecruitmentPl
   const { data, error } = await supabase
     .from('hr_recruitment_plan')
     .select(
-      'id,division,team,current_count,retire_planned_count,recruit_planned_count,document_passed_count,interview_count,final_passed_count,sort_order'
+      'id,division,team,current_count,retire_planned_count,recruit_planned_count,document_passed_count,interview_count,final_passed_count,fill_rate,sort_order'
     )
     .eq('period', period)
     .order('sort_order');
   if (error || !data) return [];
-  return data as RecruitmentPlanRow[];
+  // fill_rate 는 0033 에서 나중에 붙은 nullable 컬럼이라 기존 행은 null 이다.
+  // 그대로 넘기면 화면의 controlled input 이 value={null} 로 깨지므로 여기서 정규화한다.
+  return (data as RecruitmentPlanRow[]).map((r) => ({ ...r, fill_rate: r.fill_rate ?? '' }));
 }
 
 /**
@@ -838,6 +842,7 @@ export async function saveRecruitmentPlan(period: string, rows: RecruitmentPlanR
       document_passed_count: r.document_passed_count,
       interview_count: r.interview_count,
       final_passed_count: r.final_passed_count,
+      fill_rate: r.fill_rate,
       sort_order: i,
     }));
     const { error } = await supabase.from('hr_recruitment_plan').insert(payload);

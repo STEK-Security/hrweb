@@ -112,6 +112,7 @@ export function RecruitmentDashboard({ period }: Props) {
         document_passed_count: 0,
         interview_count: 0,
         final_passed_count: 0,
+        fill_rate: '',
         sort_order: (prev?.length ?? 0) + 1,
       },
     ]);
@@ -131,7 +132,11 @@ export function RecruitmentDashboard({ period }: Props) {
 
   const list = rows ?? [];
   const totals = COUNT_COLS.map((c) => list.reduce((acc, r) => acc + (Number(r[c.field]) || 0), 0));
-  const colCount = 2 + COUNT_COLS.length + (isEditing ? 1 : 0);
+  const colCount = 2 + COUNT_COLS.length + 1 + (isEditing ? 1 : 0); // +1 = 충원율
+
+  // 합계 행의 충원율만 자동계산한다(개별 행은 수기). 비율은 단순 합산이 무의미하므로
+  // 전사 최종합격 ÷ 전사 충원예정 으로 낸다. COUNT_COLS 순서: [2]=충원예정, [5]=최종합격.
+  const totalFillRate = totals[2] > 0 ? `${Math.round((totals[5] / totals[2]) * 100)}%` : '-';
 
   return (
     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
@@ -228,7 +233,7 @@ export function RecruitmentDashboard({ period }: Props) {
 
       {/* Table */}
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="w-full text-xs text-left text-slate-700 border-collapse min-w-[700px]">
+        <table className="w-full text-xs text-left text-slate-700 border-collapse min-w-[800px]">
           <thead>
             <tr className="bg-slate-50/90 text-slate-800 font-semibold border-b border-slate-200">
               <th scope="col" className="py-2.5 px-3.5 w-36 font-bold">본부</th>
@@ -238,6 +243,7 @@ export function RecruitmentDashboard({ period }: Props) {
                   {c.label}
                 </th>
               ))}
+              <th scope="col" className="py-2.5 px-3 text-center w-24 text-violet-700 font-bold">충원율</th>
               {isEditing && <th scope="col" className="py-2.5 px-2 text-center w-12 font-bold">삭제</th>}
             </tr>
           </thead>
@@ -304,6 +310,20 @@ export function RecruitmentDashboard({ period }: Props) {
                       )}
                     </td>
                   ))}
+                  <td className="py-2 px-3 text-center">
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={row.fill_rate}
+                        placeholder="예: 80%"
+                        onChange={(e) => patch(row.id, { fill_rate: e.target.value })}
+                        aria-label={`행 ${idx + 1} 충원율`}
+                        className="w-full text-center py-1 px-1 bg-white hover:bg-slate-50 focus:bg-violet-50/60 rounded border border-violet-300 focus:border-violet-500 focus:ring-1 focus:ring-violet-400 font-bold text-violet-700 text-xs transition-colors outline-none"
+                      />
+                    ) : (
+                      <span className="font-bold text-violet-700">{row.fill_rate || '-'}</span>
+                    )}
+                  </td>
                   {isEditing && (
                     <td className="py-1.5 px-2 text-center">
                       <button
@@ -336,6 +356,12 @@ export function RecruitmentDashboard({ period }: Props) {
                     {totals[i]}명
                   </td>
                 ))}
+                <td
+                  className="py-2.5 px-3 text-center font-black text-violet-700 bg-violet-50/60"
+                  title="전사 최종합격 ÷ 전사 충원예정 (자동 계산)"
+                >
+                  {totalFillRate}
+                </td>
                 {isEditing && <td className="py-2.5 px-2"></td>}
               </tr>
             </tfoot>

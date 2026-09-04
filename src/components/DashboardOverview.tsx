@@ -546,6 +546,86 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </div>
 
+          {/* 인원 집계 현황표 — KPI 카드 바로 아래, 핵심지표 요약 위 */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <span className="text-sm font-bold text-slate-700">인원 집계 현황표</span>
+                <span className="text-[10px] text-slate-400 ml-2">단위: 명</span>
+              </div>
+
+              <div className="flex items-center space-x-1 bg-white border border-slate-200 p-0.5 rounded-lg text-xs">
+                {(['전체', ...corpNames]).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setTableFilter(filter)}
+                    className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
+                      tableFilter === filter
+                        ? 'bg-blue-600 text-white font-bold shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {filter === '전체' ? '전사 통합' : `${filter} 법인`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-72">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-white text-slate-500 text-[11px] sticky top-0 uppercase border-b border-slate-100">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">법인명</th>
+                    <th className="px-5 py-3 font-semibold">근무지</th>
+                    <th className="px-5 py-3 font-semibold text-center text-blue-600">합계</th>
+                    <th className="px-5 py-3 font-semibold text-center text-rose-500">휴직</th>
+                    <th className="px-5 py-3 font-semibold text-center">남</th>
+                    <th className="px-5 py-3 font-semibold text-center">여</th>
+                    <th className="px-5 py-3 font-semibold text-center">내국인</th>
+                    <th className="px-5 py-3 font-semibold text-center">외국인</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs divide-y divide-slate-50">
+                  {filteredMatrix.map((row) => (
+                    <tr key={row.id} className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+                      <td className="px-5 py-3 font-bold text-slate-900">
+                        {row.corporation}
+                      </td>
+                      <td className="px-5 py-3 text-slate-500 font-medium">{row.location}</td>
+                      <td className="px-5 py-3 text-center font-bold text-blue-600">
+                        {row.totalCount}
+                      </td>
+                      <td className="px-5 py-3 text-center text-rose-500 font-medium">
+                        {row.leaveCount}
+                      </td>
+                      <td className="px-5 py-3 text-center">{row.maleCount}</td>
+                      <td className="px-5 py-3 text-center">{row.femaleCount}</td>
+                      <td className="px-5 py-3 text-center">{row.domesticCount}</td>
+                      <td className="px-5 py-3 text-center text-amber-700 font-medium">
+                        {row.foreignCount}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200">
+                  <tr>
+                    <td colSpan={2} className="px-5 py-3 text-center font-bold">
+                      통합 집계 총계
+                    </td>
+                    <td className="px-5 py-3 text-center text-blue-600 font-black text-sm">
+                      {matrixTotals.total}
+                    </td>
+                    <td className="px-5 py-3 text-center text-rose-500">{matrixTotals.leave}</td>
+                    <td className="px-5 py-3 text-center">{matrixTotals.male}</td>
+                    <td className="px-5 py-3 text-center">{matrixTotals.female}</td>
+                    <td className="px-5 py-3 text-center">{matrixTotals.domestic}</td>
+                    <td className="px-5 py-3 text-center text-amber-700">{matrixTotals.foreign}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
           {/* 핵심 지표 요약 (수기 입력 + 증감 자동계산 + 특이사항 이슈) */}
           <KeyMetricsSummary period={asOfDate.slice(0, 7)} />
 
@@ -901,86 +981,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </div>
 
-          {/* Row 4: Detailed Consolidated Matrix Table */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-              <div>
-                <span className="text-sm font-bold text-slate-700">인원 집계 현황표</span>
-                <span className="text-[10px] text-slate-400 ml-2">단위: 명</span>
-              </div>
-
-              <div className="flex items-center space-x-1 bg-white border border-slate-200 p-0.5 rounded-lg text-xs">
-                {(['전체', ...corpNames]).map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    onClick={() => setTableFilter(filter)}
-                    className={`px-2.5 py-1 rounded-md font-medium text-xs transition-colors ${
-                      tableFilter === filter
-                        ? 'bg-blue-600 text-white font-bold shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {filter === '전체' ? '전사 통합' : `${filter} 법인`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto max-h-72">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white text-slate-500 text-[11px] sticky top-0 uppercase border-b border-slate-100">
-                  <tr>
-                    <th className="px-5 py-3 font-semibold">법인명</th>
-                    <th className="px-5 py-3 font-semibold">근무지</th>
-                    <th className="px-5 py-3 font-semibold text-center text-blue-600">합계</th>
-                    <th className="px-5 py-3 font-semibold text-center text-rose-500">휴직</th>
-                    <th className="px-5 py-3 font-semibold text-center">남</th>
-                    <th className="px-5 py-3 font-semibold text-center">여</th>
-                    <th className="px-5 py-3 font-semibold text-center">내국인</th>
-                    <th className="px-5 py-3 font-semibold text-center">외국인</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs divide-y divide-slate-50">
-                  {filteredMatrix.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
-                      <td className="px-5 py-3 font-bold text-slate-900">
-                        {row.corporation}
-                      </td>
-                      <td className="px-5 py-3 text-slate-500 font-medium">{row.location}</td>
-                      <td className="px-5 py-3 text-center font-bold text-blue-600">
-                        {row.totalCount}
-                      </td>
-                      <td className="px-5 py-3 text-center text-rose-500 font-medium">
-                        {row.leaveCount}
-                      </td>
-                      <td className="px-5 py-3 text-center">{row.maleCount}</td>
-                      <td className="px-5 py-3 text-center">{row.femaleCount}</td>
-                      <td className="px-5 py-3 text-center">{row.domesticCount}</td>
-                      <td className="px-5 py-3 text-center text-amber-700 font-medium">
-                        {row.foreignCount}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200">
-                  <tr>
-                    <td colSpan={2} className="px-5 py-3 text-center font-bold">
-                      통합 집계 총계
-                    </td>
-                    <td className="px-5 py-3 text-center text-blue-600 font-black text-sm">
-                      {matrixTotals.total}
-                    </td>
-                    <td className="px-5 py-3 text-center text-rose-500">{matrixTotals.leave}</td>
-                    <td className="px-5 py-3 text-center">{matrixTotals.male}</td>
-                    <td className="px-5 py-3 text-center">{matrixTotals.female}</td>
-                    <td className="px-5 py-3 text-center">{matrixTotals.domestic}</td>
-                    <td className="px-5 py-3 text-center text-amber-700">{matrixTotals.foreign}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
         </div>
 
         {/* Right Side: 28% Sleek HR Calendar & Aside */}
