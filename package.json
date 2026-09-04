@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:unit": "tsx test/unit/derive.ts && tsx test/unit/autoEvents.ts && tsx test/unit/stats.ts"
+    "test:unit": "tsx test/unit/derive.ts && tsx test/unit/autoEvents.ts && tsx test/unit/stats.ts && tsx test/unit/metricDelta.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

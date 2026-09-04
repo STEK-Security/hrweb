@@ -718,3 +718,179 @@ export async function getOrgSetting(key: string): Promise<boolean> {
   if (error || !data) return true;
   return data.value !== false;
 }
+
+export interface KeyMetricRow {
+  metric_key: string;
+  label: string;
+  last_month: string;
+  this_month: string;
+  last_year_month: string;
+  sort_order: number;
+}
+
+export interface RecruitmentPlanRow {
+  id: string;
+  division: string;
+  team: string;
+  current_count: number;
+  retire_planned_count: number;
+  recruit_planned_count: number;
+  document_passed_count: number;
+  interview_count: number;
+  final_passed_count: number;
+  sort_order: number;
+}
+
+export type NoteScope = '핵심지표' | '채용';
+export type NoteImportance = '높음' | '보통' | '낮음';
+
+export interface DashboardNote {
+  id: string;
+  period: string;
+  scope: NoteScope;
+  content: string;
+  importance: NoteImportance;
+  author_email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 핵심지표 요약(해당 월) 조회. 증감·YoY증감은 저장하지 않는 파생값이라 여기서 오지 않는다. */
+export async function listKeyMetrics(period: string): Promise<KeyMetricRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('hr_key_metrics')
+    .select('metric_key,label,last_month,this_month,last_year_month,sort_order')
+    .eq('period', period)
+    .order('sort_order');
+  if (error || !data) return [];
+  return data as KeyMetricRow[];
+}
+
+/** 핵심지표 요약 저장. (period, metric_key) 유니크 기준 upsert 라 행 수는 고정이다. */
+export async function saveKeyMetrics(period: string, rows: KeyMetricRow[]): Promise<boolean> {
+  if (!supabase) return false;
+  const payload = rows.map((r) => ({ ...r, period }));
+  const { error } = await supabase
+    .from('hr_key_metrics')
+    .upsert(payload, { onConflict: 'period,metric_key' });
+  return !error;
+}
+
+/** 채용 대시보드(해당 월) 조회. sort_order 오름차순. */
+export async function listRecruitmentPlan(period: string): Promise<RecruitmentPlanRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('hr_recruitment_plan')
+    .select(
+      'id,division,team,current_count,retire_planned_count,recruit_planned_count,document_passed_count,interview_count,final_passed_count,sort_order'
+    )
+    .eq('period', period)
+    .order('sort_order');
+  if (error || !data) return [];
+  return data as RecruitmentPlanRow[];
+}
+
+/**
+ * 채용 대시보드 저장. 화면에서 행 추가/삭제가 자유로우므로 해당 period 를 통째로 교체한다.
+ * 클라이언트 임시 id(rec-...)는 넘기지 않고 DB 가 새로 발급한다.
+ *
+ * 신규 insert 를 먼저 하고 구 행을 나중에 지운다 — supabase-js 에 트랜잭션이 없어서
+ * 지우고 넣다가 insert 가 실패하면 그 달 데이터가 통째로 사라지기 때문이다.
+ * insert 가 실패하면 구 행이 그대로 남고, delete 가 실패하면 최악이 중복 노출이라 복구 가능하다.
+ */
+export async function saveRecruitmentPlan(period: string, rows: RecruitmentPlanRow[]): Promise<boolean> {
+  if (!supabase) return false;
+  const { data: existing, error: readErr } = await supabase
+    .from('hr_recruitment_plan')
+    .select('id')
+    .eq('period', period);
+  if (readErr) return false;
+  const oldIds = (existing ?? []).map((r) => r.id as string);
+
+  if (rows.length > 0) {
+    const payload = rows.map((r, i) => ({
+      period,
+      division: r.division,
+      team: r.team,
+      current_count: r.current_count,
+      retire_planned_count: r.retire_planned_count,
+      recruit_planned_count: r.recruit_planned_count,
+      document_passed_count: r.document_passed_count,
+      interview_count: r.interview_count,
+      final_passed_count: r.final_passed_count,
+      sort_order: i,
+    }));
+    const { error } = await supabase.from('hr_recruitment_plan').insert(payload);
+    if (error) return false;
+  }
+
+  if (oldIds.length > 0) {
+    // RLS 로 0행 삭제되면 error 가 null 이라 그냥 두면 "저장 성공"으로 거짓 보고된다.
+    // 그 사이 신규 행은 이미 들어가 있어서 구행과 중복 노출되므로 반환행으로 확인한다.
+    const { data: gone, error } = await supabase
+      .from('hr_recruitment_plan')
+      .delete()
+      .in('id', oldIds)
+      .select('id');
+    if (error || !gone || gone.length !== oldIds.length) return false;
+  }
+  return true;
+}
+
+/** 대시보드 이슈 메모 조회(최신순). period 지정 시 해당 월만, limit 미지정 시 전체. */
+export async function listDashboardNotes(
+  scope: NoteScope,
+  opts?: { period?: string; limit?: number }
+): Promise<DashboardNote[]> {
+  if (!supabase) return [];
+  let query = supabase
+    .from('hr_dashboard_notes')
+    .select('*')
+    .eq('scope', scope)
+    .order('created_at', { ascending: false });
+  if (opts?.period) query = query.eq('period', opts.period);
+  if (opts?.limit) query = query.limit(opts.limit);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as DashboardNote[];
+}
+
+/** 대시보드 이슈 메모 등록. 작성자 이메일은 현재 세션에서 채운다. 실패 시 null. */
+export async function addDashboardNote(input: {
+  period: string;
+  scope: NoteScope;
+  content: string;
+  importance: NoteImportance;
+}): Promise<DashboardNote | null> {
+  if (!supabase) return null;
+  const { data: sess } = await supabase.auth.getSession();
+  const { data, error } = await supabase
+    .from('hr_dashboard_notes')
+    .insert({ ...input, author_email: sess.session?.user.email ?? null })
+    .select()
+    .single();
+  if (error || !data) return null;
+  return data as DashboardNote;
+}
+
+/** 이슈 메모 수정. RLS 로 막혀 0행 갱신되면 에러 없이 조용히 실패하므로 반환행으로 확인한다. */
+export async function updateDashboardNote(
+  id: string,
+  patch: { content?: string; importance?: NoteImportance }
+): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase
+    .from('hr_dashboard_notes')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select();
+  return !error && !!data && data.length > 0;
+}
+
+/** 이슈 메모 삭제. RLS 로 0행 삭제되면 error 가 없으므로 반환행으로 확인한다. */
+export async function deleteDashboardNote(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase.from('hr_dashboard_notes').delete().eq('id', id).select('id');
+  return !error && !!data && data.length > 0;
+}

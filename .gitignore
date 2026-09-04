@@ -22,3 +22,5 @@ hr-app.html
 # 테스트 임시 산출물
 /tmp/
 *.tmp
+
+update-hr/

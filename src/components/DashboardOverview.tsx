@@ -39,6 +39,8 @@ import {
   Info,
 } from 'lucide-react';
 import { buildTurnoverRates } from '../lib/stats';
+import { KeyMetricsSummary } from './KeyMetricsSummary';
+import { RecruitmentDashboard } from './RecruitmentDashboard';
 
 interface DashboardOverviewProps {
   kpiData: KPIData;
@@ -543,6 +545,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 핵심 지표 요약 (수기 입력 + 증감 자동계산 + 특이사항 이슈) */}
+          <KeyMetricsSummary period={asOfDate.slice(0, 7)} />
+
+          {/* 채용 대시보드 (본부/팀별 채용 현황 + 특이사항 이슈) */}
+          <RecruitmentDashboard period={asOfDate.slice(0, 7)} />
 
           {/* Row 2: Demographic Composition (Line 1: Donut Charts / Line 2: Horizontal Bar Charts) */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-5">
