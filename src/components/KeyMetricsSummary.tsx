@@ -1,10 +1,17 @@
 /**
  * 핵심 지표 요약 카드. 전월/당월/전년동월은 수기 입력(hr_key_metrics),
- * 증감·YoY증감은 calcDelta 로 파생되는 읽기 전용 값이라 저장하지 않는다.
+ * 증감·YoY증감은 calcDelta 로 파생되는 읽기 전용 값이라 기본 5행은 저장하지 않는다.
+ *
+ * 직접 입력 행(custom_1/custom_2)만 예외다 — 담당자가 그 달에 보고 싶은 임의 항목을
+ * 쓰는 칸이라 구분(label)과 증감·YoY까지 6개 열이 전부 자유 입력이다(0034).
+ * 증감·YoY를 비워 두면 기본 행과 똑같이 자동계산값이 보인다.
+ *
+ * [전체보기]는 지난 달 저장분을 읽기 전용으로 띄운다. 기준일 캘린더를 되돌리지 않고도
+ * 월별 이력을 볼 수 있어야 한다는 요구(매월 누적·최신월 기준)에 맞춘 것이다.
  */
 import { useEffect, useState } from 'react';
-import { Save, CheckCircle2, AlertCircle, Edit3, Loader2 } from 'lucide-react';
-import { listKeyMetrics, saveKeyMetrics, type KeyMetricRow } from '../lib/db';
+import { Save, CheckCircle2, AlertCircle, Edit3, Loader2, History, X } from 'lucide-react';
+import { listKeyMetrics, saveKeyMetrics, listKeyMetricPeriods, type KeyMetricRow } from '../lib/db';
 import { calcDelta } from '../lib/metricDelta';
 import { DashboardNotesPanel } from './DashboardNotesPanel';
 
@@ -16,6 +23,7 @@ interface Props {
  * 표시 라벨은 여기서 만든다. DB 에도 label 컬럼이 있지만 그걸 그대로 쓰면
  * 이미 저장된 행의 옛 이름이 계속 보여서(예: '이직률'), 이름을 바꿀 때마다
  * UPDATE 마이그레이션이 필요해진다. metric_key 가 유일한 키다.
+ * 직접 입력 행은 여기 없다 — 사용자가 적은 label 이 그대로 이름이다.
  */
 const METRIC_LABELS: Record<string, string> = {
   closing_headcount: '기말 재직인원(명)',
@@ -25,19 +33,45 @@ const METRIC_LABELS: Record<string, string> = {
   labor_cost: '총 노무비(천원)',
 };
 
-/** metric_key 에 매핑이 없으면(향후 항목 추가 시) DB 라벨로 대체한다. */
+/** 직접 입력 행 판정. 이 행만 구분·증감·YoY 를 직접 쓸 수 있다. */
+const isCustom = (key: string) => key.startsWith('custom_');
+
+/** metric_key 에 매핑이 없으면(직접 입력 행) DB 라벨로 대체한다. */
 const labelOf = (r: KeyMetricRow) => METRIC_LABELS[r.metric_key] ?? r.label;
 
-/** 해당 월에 저장된 행이 없을 때 입력용 빈 골격. metric_key 는 0031 스키마와 동일. */
+/** 해당 월에 저장된 행이 없을 때 입력용 빈 골격. metric_key 는 0031/0034 스키마와 동일. */
 const EMPTY_ROWS: KeyMetricRow[] = [
-  { metric_key: 'closing_headcount', label: '기말 재직인원(명)', last_month: '', this_month: '', last_year_month: '', sort_order: 1 },
-  { metric_key: 'new_hires', label: '입사자 수', last_month: '', this_month: '', last_year_month: '', sort_order: 2 },
-  { metric_key: 'leavers', label: '퇴사자 수', last_month: '', this_month: '', last_year_month: '', sort_order: 3 },
-  { metric_key: 'turnover_rate', label: '퇴사율', last_month: '', this_month: '', last_year_month: '', sort_order: 4 },
-  { metric_key: 'labor_cost', label: '총 노무비(천원)', last_month: '', this_month: '', last_year_month: '', sort_order: 5 },
+  { metric_key: 'closing_headcount', label: '기말 재직인원(명)', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 1 },
+  { metric_key: 'new_hires', label: '입사자 수', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 2 },
+  { metric_key: 'leavers', label: '퇴사자 수', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 3 },
+  { metric_key: 'turnover_rate', label: '퇴사율', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 4 },
+  { metric_key: 'labor_cost', label: '총 노무비(천원)', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 5 },
+  { metric_key: 'custom_1', label: '', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 6 },
+  { metric_key: 'custom_2', label: '', last_month: '', this_month: '', last_year_month: '', change_text: '', yoy_change_text: '', sort_order: 7 },
 ];
 
-type InputField = 'last_month' | 'this_month' | 'last_year_month';
+/**
+ * DB 에서 읽은 행에 골격을 덧댄다. 0034 이전에 저장된 달에는 custom 행이 아예 없어서,
+ * 그대로 두면 지난 달을 수정할 때 직접 입력 칸이 보이지 않는다.
+ */
+const mergeWithSkeleton = (rows: KeyMetricRow[]): KeyMetricRow[] => {
+  const byKey = new Map(rows.map((r) => [r.metric_key, r]));
+  const merged = EMPTY_ROWS.map((skel) => byKey.get(skel.metric_key) ?? skel);
+  // 골격에 없는 키(향후 추가분)도 잃지 않는다.
+  const extra = rows.filter((r) => !EMPTY_ROWS.some((s) => s.metric_key === r.metric_key));
+  return [...merged, ...extra].sort((a, b) => a.sort_order - b.sort_order);
+};
+
+type InputField = 'last_month' | 'this_month' | 'last_year_month' | 'change_text' | 'yoy_change_text' | 'label';
+
+const FIELD_NAMES: Record<InputField, string> = {
+  last_month: '전월',
+  this_month: '당월',
+  last_year_month: '전년동월',
+  change_text: '증감',
+  yoy_change_text: 'YoY증감',
+  label: '구분',
+};
 
 const INPUT_CLS =
   'w-full text-center py-1 px-1.5 bg-white hover:bg-slate-50 focus:bg-blue-50/60 rounded border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-400 text-xs transition-colors outline-none';
@@ -71,12 +105,204 @@ const AutoCell = ({ value, cls, editing }: { value: string; cls: string; editing
   </td>
 );
 
+/* ---------------- 표 (카드 · 전체보기 모달 공용) ---------------- */
+
+interface TableProps {
+  rows: KeyMetricRow[] | null;
+  editing: boolean;
+  onCellChange?: (key: string, field: InputField, value: string) => void;
+}
+
+function MetricsTable({ rows, editing, onCellChange }: TableProps) {
+  return (
+    <div className="overflow-x-auto border border-slate-200 rounded-lg">
+      <table className="w-full text-xs text-left text-slate-700 border-collapse min-w-[640px]">
+        <thead>
+          <tr className="bg-slate-50/90 text-slate-800 font-semibold border-b border-slate-200">
+            <th scope="col" className="py-2.5 px-3.5 w-44 font-bold">구분</th>
+            <th scope="col" className="py-2.5 px-3 text-center w-28">전월</th>
+            <th scope="col" className="py-2.5 px-3 text-center w-28">당월</th>
+            <AutoTh label="증감" />
+            <th scope="col" className="py-2.5 px-3 text-center w-28">전년동월</th>
+            <AutoTh label="YoY증감" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows === null ? (
+            <tr>
+              <td colSpan={6} className="py-10 text-center text-slate-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="w-4 h-4 animate-spin" /> 불러오는 중…
+                </span>
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => {
+              const custom = isCustom(row.metric_key);
+              // 직접 입력값이 있으면 그것이 우선. 비면 기본 행과 똑같이 자동계산.
+              const change = row.change_text || calcDelta(row.this_month, row.last_month);
+              const yoy = row.yoy_change_text || calcDelta(row.this_month, row.last_year_month);
+              const name = labelOf(row);
+
+              const input = (field: InputField, extra: string, placeholder?: string) => (
+                <input
+                  type="text"
+                  value={row[field]}
+                  onChange={(e) => onCellChange?.(row.metric_key, field, e.target.value)}
+                  placeholder={placeholder}
+                  aria-label={`${name || '직접 입력 행'} ${FIELD_NAMES[field]}`}
+                  className={`${INPUT_CLS} ${extra}`}
+                />
+              );
+
+              /** 증감/YoY 셀: 직접 입력 행만 입력칸, 나머지는 기존처럼 자동 표시 */
+              const deltaCell = (field: 'change_text' | 'yoy_change_text', value: string, cls: string) =>
+                custom && editing ? (
+                  <td className="py-2 px-3 text-center bg-slate-50/70">
+                    {input(field, `font-semibold ${cls}`, '자동')}
+                  </td>
+                ) : (
+                  <AutoCell value={value} editing={editing} cls={cls} />
+                );
+
+              return (
+                <tr key={row.metric_key} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="py-2 px-3.5 font-bold text-slate-900 bg-slate-50/30">
+                    {custom && editing ? (
+                      input('label', 'text-left font-bold text-slate-900', '구분 입력')
+                    ) : custom && !name ? (
+                      <span className="text-slate-300 font-normal italic">직접 입력</span>
+                    ) : (
+                      name
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    {editing ? input('last_month', 'font-semibold text-slate-800') : (
+                      <span className="font-semibold text-slate-800">{row.last_month || '-'}</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    {editing ? input('this_month', 'font-bold text-blue-700') : (
+                      <span className="font-bold text-blue-700">{row.this_month || '-'}</span>
+                    )}
+                  </td>
+                  {deltaCell('change_text', change, deltaColor(change, 'text-emerald-700', 'text-rose-600'))}
+                  <td className="py-2 px-3 text-center">
+                    {editing ? input('last_year_month', 'font-semibold text-slate-800') : (
+                      <span className="font-semibold text-slate-800">{row.last_year_month || '-'}</span>
+                    )}
+                  </td>
+                  {deltaCell('yoy_change_text', yoy, deltaColor(yoy, 'text-blue-700', 'text-amber-600'))}
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ---------------- 전체보기(월별 이력) 모달 ---------------- */
+
+function HistoryModal({ period, onClose }: { period: string; onClose: () => void }) {
+  const [periods, setPeriods] = useState<string[] | null>(null);
+  const [sel, setSel] = useState(period);
+  const [rows, setRows] = useState<KeyMetricRow[] | null>(null);
+
+  useEffect(() => {
+    void listKeyMetricPeriods().then((ps) => {
+      // 저장된 적 없는 달이라도 현재 기준월은 고를 수 있어야 한다.
+      setPeriods(ps.includes(period) ? ps : [period, ...ps].sort().reverse());
+    });
+  }, [period]);
+
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    void listKeyMetrics(sel).then((r) => alive && setRows(mergeWithSkeleton(r)));
+    return () => {
+      alive = false;
+    };
+  }, [sel]);
+
+  // Tab 으로 포커스가 모달 밖으로 나가도 Esc 가 먹도록 document 에서 잡는다.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="metrics-history-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+    >
+      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-4 rounded-full bg-blue-600" />
+            <h3 id="metrics-history-title" className="text-base font-bold text-slate-900">
+              핵심 지표 월별 이력
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+          <label htmlFor="metrics-history-period" className="text-xs font-semibold text-slate-600">
+            조회 월
+          </label>
+          <select
+            id="metrics-history-period"
+            value={sel}
+            onChange={(e) => setSel(e.target.value)}
+            disabled={periods === null}
+            className="text-xs py-1 px-2 rounded-lg border bg-white outline-none focus:ring-2 border-slate-300 focus:border-blue-500 focus:ring-blue-200/50 cursor-pointer disabled:opacity-50"
+          >
+            {(periods ?? [period]).map((p) => (
+              <option key={p} value={p}>
+                {p}
+                {p === period ? ' (기준월)' : ''}
+              </option>
+            ))}
+          </select>
+          <span className="text-[11px] text-slate-400">
+            {periods === null ? '월 목록 불러오는 중…' : `저장된 월 ${periods.length}개 · 읽기 전용`}
+          </span>
+        </div>
+
+        <div className="p-5 overflow-y-auto">
+          <MetricsTable rows={rows} editing={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 카드 ---------------- */
+
 export function KeyMetricsSummary({ period }: Props) {
   const [rows, setRows] = useState<KeyMetricRow[] | null>(null); // null = 로딩 중
   /** 수정 중인 대상 월. null = 조회 모드. 상위 기준일이 바뀌어도 이 값이 저장 대상이다. */
   const [editPeriod, setEditPeriod] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<'ok' | 'fail' | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const isEditing = editPeriod !== null;
   const stale = editPeriod !== null && editPeriod !== period;
 
@@ -89,7 +315,7 @@ export function KeyMetricsSummary({ period }: Props) {
     setNotice(null);
     void listKeyMetrics(period).then((r) => {
       if (!alive) return;
-      setRows(r.length ? [...r].sort((a, b) => a.sort_order - b.sort_order) : EMPTY_ROWS);
+      setRows(mergeWithSkeleton(r));
     });
     return () => {
       alive = false;
@@ -155,6 +381,15 @@ export function KeyMetricsSummary({ period }: Props) {
           )}
           <button
             type="button"
+            onClick={() => setHistoryOpen(true)}
+            className="px-3 py-1.5 text-xs rounded-lg font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="지난 달에 입력한 핵심지표 보기"
+          >
+            <History className="w-3.5 h-3.5" />
+            전체보기
+          </button>
+          <button
+            type="button"
             onClick={() => setEditPeriod(period)}
             disabled={isEditing || rows === null}
             className={`px-3 py-1.5 text-xs rounded-lg font-semibold transition-colors flex items-center gap-1.5 ${
@@ -194,78 +429,18 @@ export function KeyMetricsSummary({ period }: Props) {
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="w-full text-xs text-left text-slate-700 border-collapse min-w-[640px]">
-          <thead>
-            <tr className="bg-slate-50/90 text-slate-800 font-semibold border-b border-slate-200">
-              <th scope="col" className="py-2.5 px-3.5 w-44 font-bold">구분</th>
-              <th scope="col" className="py-2.5 px-3 text-center w-28">전월</th>
-              <th scope="col" className="py-2.5 px-3 text-center w-28">당월</th>
-              <AutoTh label="증감" />
-              <th scope="col" className="py-2.5 px-3 text-center w-28">전년동월</th>
-              <AutoTh label="YoY증감" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows === null ? (
-              <tr>
-                <td colSpan={6} className="py-10 text-center text-slate-400">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="w-4 h-4 animate-spin" /> 불러오는 중…
-                  </span>
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => {
-                const change = calcDelta(row.this_month, row.last_month);
-                const yoy = calcDelta(row.this_month, row.last_year_month);
-                const input = (field: InputField, extra: string) => (
-                  <input
-                    type="text"
-                    value={row[field]}
-                    onChange={(e) => handleCellChange(row.metric_key, field, e.target.value)}
-                    aria-label={`${labelOf(row)} ${field === 'last_month' ? '전월' : field === 'this_month' ? '당월' : '전년동월'}`}
-                    className={`${INPUT_CLS} ${extra}`}
-                  />
-                );
-                return (
-                  <tr key={row.metric_key} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-2 px-3.5 font-bold text-slate-900 bg-slate-50/30">{labelOf(row)}</td>
-                    <td className="py-2 px-3 text-center">
-                      {isEditing ? input('last_month', 'font-semibold text-slate-800') : (
-                        <span className="font-semibold text-slate-800">{row.last_month || '-'}</span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      {isEditing ? input('this_month', 'font-bold text-blue-700') : (
-                        <span className="font-bold text-blue-700">{row.this_month || '-'}</span>
-                      )}
-                    </td>
-                    <AutoCell
-                      value={change}
-                      editing={isEditing}
-                      cls={deltaColor(change, 'text-emerald-700', 'text-rose-600')}
-                    />
-                    <td className="py-2 px-3 text-center">
-                      {isEditing ? input('last_year_month', 'font-semibold text-slate-800') : (
-                        <span className="font-semibold text-slate-800">{row.last_year_month || '-'}</span>
-                      )}
-                    </td>
-                    <AutoCell
-                      value={yoy}
-                      editing={isEditing}
-                      cls={deltaColor(yoy, 'text-blue-700', 'text-amber-600')}
-                    />
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <MetricsTable rows={rows} editing={isEditing} onCellChange={handleCellChange} />
+
+      {isEditing && (
+        <p className="text-[11px] text-slate-500">
+          아래 2줄은 <b className="text-slate-700">직접 입력 행</b>입니다. 구분·증감·YoY증감까지 원하는 값을 적을 수 있고,
+          증감·YoY증감을 비워 두면 위 행들처럼 자동 계산됩니다.
+        </p>
+      )}
 
       <DashboardNotesPanel scope="핵심지표" period={period} accent="amber" />
+
+      {historyOpen && <HistoryModal period={period} onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

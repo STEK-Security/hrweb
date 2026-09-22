@@ -725,6 +725,12 @@ export interface KeyMetricRow {
   last_month: string;
   this_month: string;
   last_year_month: string;
+  /**
+   * 증감·YoY증감 수기 입력(0034). 기본 5행은 비워 두고 calcDelta 자동계산을 쓴다.
+   * 직접 입력 행(custom_*)에서만 채우며, 비면 자동계산값이 그대로 보인다.
+   */
+  change_text: string;
+  yoy_change_text: string;
   sort_order: number;
 }
 
@@ -776,16 +782,44 @@ async function withAuthorNames(rows: NoteRow[]): Promise<DashboardNote[]> {
   return rows.map((r) => ({ ...r, author_name: (r.created_by && nameById.get(r.created_by)) || null }));
 }
 
-/** 핵심지표 요약(해당 월) 조회. 증감·YoY증감은 저장하지 않는 파생값이라 여기서 오지 않는다. */
+const KEY_METRIC_COLS =
+  'metric_key,label,last_month,this_month,last_year_month,change_text,yoy_change_text,sort_order';
+
+/**
+ * 핵심지표 요약(해당 월) 조회.
+ * 증감·YoY증감은 원래 저장하지 않는 파생값이었고 지금도 기본 5행은 그렇다. 0034 에서
+ * 직접 입력 행을 위해 덮어쓰기용 컬럼만 추가했다 — 비어 있으면 화면이 자동계산을 쓴다.
+ */
 export async function listKeyMetrics(period: string): Promise<KeyMetricRow[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('hr_key_metrics')
-    .select('metric_key,label,last_month,this_month,last_year_month,sort_order')
+    .select(KEY_METRIC_COLS)
     .eq('period', period)
     .order('sort_order');
   if (error || !data) return [];
-  return data as KeyMetricRow[];
+  // change_text/yoy_change_text 는 0034 에서 나중에 붙은 nullable 이라 기존 행은 null 이다.
+  // 그대로 넘기면 화면의 controlled input 이 value={null} 로 깨지므로 여기서 정규화한다.
+  return (data as KeyMetricRow[]).map((r) => ({
+    ...r,
+    change_text: r.change_text ?? '',
+    yoy_change_text: r.yoy_change_text ?? '',
+  }));
+}
+
+/**
+ * 핵심지표가 저장된 월 목록(최신순). "전체보기"에서 지난 달을 고르는 데 쓴다.
+ * distinct 를 PostgREST 로 못 하므로 period 만 받아 클라이언트에서 중복을 제거한다 —
+ * 월 단위라 행이 수십 개 수준이고, 따로 뷰를 만들 만한 규모가 아니다.
+ */
+export async function listKeyMetricPeriods(): Promise<string[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('hr_key_metrics')
+    .select('period')
+    .order('period', { ascending: false });
+  if (error || !data) return [];
+  return [...new Set((data as { period: string }[]).map((r) => r.period))];
 }
 
 /** 핵심지표 요약 저장. (period, metric_key) 유니크 기준 upsert 라 행 수는 고정이다. */
@@ -862,18 +896,30 @@ export async function saveRecruitmentPlan(period: string, rows: RecruitmentPlanR
   return true;
 }
 
-/** 대시보드 이슈 메모 조회(최신순). period 지정 시 해당 월만, limit 미지정 시 전체. */
+/**
+ * 대시보드 이슈 메모 조회(최신순).
+ *  · period — 그 달만(완전일치)
+ *  · upto   — 그 달까지 누적(period <= upto). 기본 화면이 쓰는 값이다.
+ *  · 둘 다 없으면 전체, limit 미지정 시 전량.
+ *
+ * 화면이 period 완전일치를 쓰던 때는 달이 바뀌는 순간 지난달 이슈가 통째로 사라졌다
+ * (새 달에 아직 아무것도 안 썼으므로 화면이 빈칸). 이슈는 누적해서 보는 성격이라
+ * 기본을 upto 로 바꿨고, 어느 달 것인지는 화면에서 월 배지로 구분한다.
+ * 기준일을 과거로 돌리면 그 시점 이후 이슈는 빠져야 하므로 상한(<=)은 유지한다.
+ */
 export async function listDashboardNotes(
   scope: NoteScope,
-  opts?: { period?: string; limit?: number }
+  opts?: { period?: string; upto?: string; limit?: number }
 ): Promise<DashboardNote[]> {
   if (!supabase) return [];
   let query = supabase
     .from('hr_dashboard_notes')
     .select('*')
     .eq('scope', scope)
+    .order('period', { ascending: false })
     .order('created_at', { ascending: false });
   if (opts?.period) query = query.eq('period', opts.period);
+  else if (opts?.upto) query = query.lte('period', opts.upto);
   if (opts?.limit) query = query.limit(opts.limit);
   const { data, error } = await query;
   if (error || !data) return [];

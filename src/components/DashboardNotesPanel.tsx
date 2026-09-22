@@ -74,12 +74,18 @@ export function DashboardNotesPanel({ scope, period, accent }: Props) {
   const [notes, setNotes] = useState<DashboardNote[] | null>(null); // null = 로딩 중
   const [open, setOpen] = useState(false);
 
-  const reload = async () => setNotes(await listDashboardNotes(scope, { period }));
+  /**
+   * 기준월 "까지" 누적으로 읽는다(그 달만 X).
+   * 완전일치로 읽던 때는 달이 바뀌는 순간 지난달 이슈가 통째로 사라졌다 — 새 달에는
+   * 아직 쓴 게 없으니 카드가 빈칸이 됐다. 이슈는 계속 보면서 누적하는 성격이라
+   * 최신 것부터 이어서 보여주고, 어느 달 것인지는 아래 월 배지로 구분한다.
+   */
+  const reload = async () => setNotes(await listDashboardNotes(scope, { upto: period }));
 
   useEffect(() => {
     let alive = true;
     setNotes(null);
-    void listDashboardNotes(scope, { period }).then((r) => alive && setNotes(r));
+    void listDashboardNotes(scope, { upto: period }).then((r) => alive && setNotes(r));
     return () => {
       alive = false;
     };
@@ -134,6 +140,12 @@ export function DashboardNotesPanel({ scope, period, accent }: Props) {
           preview.map((n) => (
             <li key={n.id} className="flex items-center gap-2 px-3 py-1.5 text-xs" title={n.content}>
               <ImportanceBadge level={n.importance} />
+              {/* 기준월이 아닌 달의 이슈에만 월을 붙인다 — 당월 것까지 달면 같은 값이 반복돼 잡음이 된다. */}
+              {n.period !== period && (
+                <span className="text-[10px] font-mono font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded px-1 py-px shrink-0">
+                  {n.period}
+                </span>
+              )}
               <span className="flex-1 truncate text-slate-800">{n.content}</span>
               <span className="text-[10px] text-slate-500 font-semibold shrink-0" title={n.author_email ?? undefined}>
                 {authorLabel(n)}
@@ -177,7 +189,8 @@ interface ModalProps extends Props {
 function NotesModal({ scope, period, accent, onClose, onChanged }: ModalProps) {
   const a = ACCENT[accent];
   const titleId = `notes-modal-title-${accent}`;
-  const [periodFilter, setPeriodFilter] = useState<'period' | 'all'>('period');
+  /** 'upto' = 기준월까지 누적(카드 미리보기와 같은 기준), 'all' = 미래 월 포함 전체. */
+  const [periodFilter, setPeriodFilter] = useState<'upto' | 'all'>('upto');
   const [impFilter, setImpFilter] = useState<NoteImportance | '전체'>('전체');
   const [list, setList] = useState<DashboardNote[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +215,7 @@ function NotesModal({ scope, period, accent, onClose, onChanged }: ModalProps) {
   useEffect(() => {
     let alive = true;
     setList(null);
-    void listDashboardNotes(scope, periodFilter === 'period' ? { period } : {}).then((r) => alive && setList(r));
+    void listDashboardNotes(scope, periodFilter === 'upto' ? { upto: period } : {}).then((r) => alive && setList(r));
     return () => {
       alive = false;
     };
@@ -361,11 +374,11 @@ function NotesModal({ scope, period, accent, onClose, onChanged }: ModalProps) {
               기간
               <select
                 value={periodFilter}
-                onChange={(e) => setPeriodFilter(e.target.value as 'period' | 'all')}
+                onChange={(e) => setPeriodFilter(e.target.value as 'upto' | 'all')}
                 aria-label="기간 필터"
                 className={selectCls}
               >
-                <option value="period">이번 달 ({period})</option>
+                <option value="upto">{period}까지 (누적)</option>
                 <option value="all">전체</option>
               </select>
             </label>
@@ -449,7 +462,8 @@ function NotesModal({ scope, period, accent, onClose, onChanged }: ModalProps) {
                       <div className="flex items-center gap-1 shrink-0">
                         <span className="text-[10px] text-slate-400 font-mono mr-1 text-right" title={n.author_email ?? undefined}>
                           <span className="block font-sans font-semibold text-slate-600">{authorLabel(n)}</span>
-                          {periodFilter === 'all' ? `${n.period} · ` : ''}
+                          {/* 'upto' 도 여러 달이 섞이므로, 기준월이 아닌 것에는 월을 붙인다. */}
+                          {periodFilter === 'all' || n.period !== period ? `${n.period} · ` : ''}
                           {fmtDate(n.created_at)}
                         </span>
                         <button
