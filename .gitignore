@@ -24,3 +24,5 @@ hr-app.html
 *.tmp
 
 update-hr/
+# 별도 레포(STEK-Security/hr-attendance)
+hr-Attendance/
