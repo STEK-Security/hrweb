@@ -5,10 +5,14 @@ import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText } from './labels';
 
+/** 직원 설정에 보일 상위 조직. 하위 팀(생산관리팀·QM 등)은 전체소속명 경로로 함께 잡힌다. */
+const SCOPE_DEPTS = ['생산본부', '품질팀'];
+
 interface Emp {
   sabun: string;
   name: string;
   dept: string | null;
+  dept_path: string | null;
   title: string | null;
   retire_date: string | null;
   site: string | null;
@@ -93,10 +97,11 @@ export function EmployeesTab() {
     }
   };
 
-  // 근태 대상은 천안(생산·품질·물류 등) 근무자 — 직원명부 근무지 기준
+  // 근태 대상은 천안 근무자 중 생산본부·품질팀(하위 조직 포함) — 직원명부 근무지·전체소속명 기준
   const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10); // KST
+  const inScope = (e: Emp) => (e.dept_path ?? '').split(' > ').some((d) => SCOPE_DEPTS.includes(d.trim()));
   const retired = (e: Emp) => !!e.retire_date && e.retire_date < today; // 퇴직일이 지난 사람만(퇴직 예정자는 재직)
-  const shown = emps?.filter((e) => e.site === '천안' && (showRetired || !retired(e)) && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
+  const shown = emps?.filter((e) => e.site === '천안' && inScope(e) && (showRetired || !retired(e)) && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
   const unknownGroup = !!draft.group && !groups.includes(draft.group);
 
   return (
