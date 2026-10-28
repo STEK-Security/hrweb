@@ -415,8 +415,7 @@ function DayDetailModal({
       const body = { in: fromLocal(inAt), out: fromLocal(outAt), reason: reason.trim() };
       await att('POST', `/api/admin/days/${encodeURIComponent(target.sabun)}/${target.date}/edit`, { body });
       await logEvent('attendance.correction', {
-        targetId: `${target.sabun}:${target.date}`,
-        meta: { kind: 'hr_edit', in: body.in, out: body.out },
+        meta: { sabun: target.sabun, date: target.date, kind: 'hr_edit', in: body.in, out: body.out },
       });
       setEditing(false);
       setReason('');

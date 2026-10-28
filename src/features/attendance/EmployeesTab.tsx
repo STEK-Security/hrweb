@@ -49,7 +49,7 @@ export function EmployeesTab() {
     try {
       const body = { shift_group: draft.group || null, attendance_target: draft.target, night_consent: draft.night, approver_override: draft.approver.trim() || null };
       await att('PATCH', `/api/admin/employees/${edit.sabun}`, { body });
-      await logEvent('attendance.employee', { targetId: edit.sabun, meta: { op: 'patch', ...body } });
+      await logEvent('attendance.employee', { meta: { sabun: edit.sabun, op: 'patch', ...body } });
       setEdit(null);
       load();
     } catch (e) {
@@ -64,7 +64,7 @@ export function EmployeesTab() {
     setError('');
     try {
       await att('POST', `/api/admin/accounts/${e.sabun}/reset`);
-      await logEvent('attendance.employee', { targetId: e.sabun, meta: { op: 'reset_password' } });
+      await logEvent('attendance.employee', { meta: { sabun: e.sabun, op: 'reset_password' } });
       setMsg(`${e.name} 비밀번호를 초기화했습니다.`);
       load();
     } catch (err) {

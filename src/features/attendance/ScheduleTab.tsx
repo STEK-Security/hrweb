@@ -125,8 +125,8 @@ export function ScheduleTab() {
   const addGroup = () =>
     run(async () => {
       const name = newName.trim();
-      // note 'pattern:<조>' 는 Worker 상한 40자 — 이름 30자면 38자
-      if (!name || name.length > 30) throw new Error('근무조 이름을 1~30자로 입력하세요.');
+      // Worker shift_group 상한 20자
+      if (!name || name.length > 20) throw new Error('근무조 이름을 1~20자로 입력하세요.');
       if (patterns.some((p) => p.group_name === name)) throw new Error('이미 있는 근무조입니다.');
       const { error: e } = await supabase!.from(TABLE).insert({ group_name: name, anchor_date: draft?.anchor ?? '2026-11-02', pattern: Array(28).fill('REST') });
       if (e) throw new Error(e.message);

@@ -70,14 +70,22 @@ export const ERROR_LABELS: Record<string, string> = {
   ALREADY_CLOSED: '이미 마감된 달입니다.',
   ALREADY_CLOSING: '이미 마감 중인 달입니다.',
   NOT_CLOSED: '마감되지 않은 달입니다.',
+  ACTOR_REQUIRED: '처리자 정보가 필요합니다. 다시 로그인하세요.',
+  UNAUTHORIZED: '인증이 필요합니다. 다시 로그인하세요.',
+  FORBIDDEN: '권한이 없습니다.',
   CLOSED_MONTH_RULE: '적용 시작 월은 마지막 마감 달 이후여야 합니다.',
 };
 
 /** AttendanceError·기타 오류를 화면 문구로. */
 export function errorText(e: unknown): string {
   const code = (e as { code?: string })?.code;
-  if (code && ERROR_LABELS[code]) return ERROR_LABELS[code];
-  return e instanceof Error ? e.message : String(e);
+  const base = code && ERROR_LABELS[code] ? ERROR_LABELS[code] : e instanceof Error ? e.message : String(e);
+  // 400 VALIDATION details · MONTH_CLOSED dates · 409 rows 를 앞 3개만 덧붙인다.
+  const d = (e as { data?: Record<string, unknown> })?.data;
+  const list = [d?.details, d?.dates, d?.rows].find(Array.isArray) as unknown[] | undefined;
+  if (!list?.length) return base;
+  const item = (x: unknown) => (typeof x === 'string' ? x : JSON.stringify(x));
+  return `${base} (${list.slice(0, 3).map(item).join(', ')}${list.length > 3 ? ` 외 ${list.length - 3}건` : ''})`;
 }
 
 export interface MatrixCell {

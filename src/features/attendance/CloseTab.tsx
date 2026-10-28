@@ -111,7 +111,7 @@ export function CloseTab({ ym, onChangeYm }: Props) {
     setMsg('');
     try {
       const { job: j } = await att<{ job: Job }>('POST', `/api/admin/months/${ym}/close`);
-      await logEvent('attendance.close', { targetId: ym, meta: { jobId: j.id } });
+      await logEvent('attendance.close', { meta: { ym, jobId: j.id } });
       setMonth((m) => ({ ...(m ?? { ym }), status: 'closing' }));
       runSteps(j);
     } catch (e) {
@@ -129,7 +129,7 @@ export function CloseTab({ ym, onChangeYm }: Props) {
     setMsg('');
     try {
       await att('POST', `/api/admin/months/${ym}/reopen`);
-      await logEvent('attendance.reopen', { targetId: ym });
+      await logEvent('attendance.reopen', { meta: { ym } });
       if (job?.ym === ym) { runningId.current = null; setJob(null); }
       setMsg(`${ym} 마감을 취소했습니다.`);
     } catch (e) {
@@ -160,7 +160,7 @@ export function CloseTab({ ym, onChangeYm }: Props) {
       const closed = status === 'closed';
       const name = `근태_${ym}${closed ? '' : '_미마감'}.xlsx`;
       downloadXlsx(xlsxWrite([[...EXPORT_COLUMNS], ...all.map((r) => EXPORT_COLUMNS.map((k) => r[k]))], `근태_${ym}`), name);
-      await logEvent('attendance.export', { targetId: ym, meta: { employees: seen.size, rows: all.length, closed } });
+      await logEvent('attendance.export', { meta: { ym, employees: seen.size, rows: all.length, closed } });
       if (alive.current) setMsg(`${name} — ${seen.size}명 ${all.length}행을 내려받았습니다.`);
     } catch (e) {
       if (alive.current) setError(`엑셀 만들기 실패: ${errorText(e)}`);

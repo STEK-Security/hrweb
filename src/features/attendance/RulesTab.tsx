@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, Save, Trash2, Loader2, AlertTriangle } from 'lucide-react';
-import { att, AttendanceError } from '../../lib/attendance';
+import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { errorText } from './labels';
 
@@ -19,13 +19,6 @@ const btn = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs fon
 const KINDS = { work: '근무', weekly_holiday: '주휴', rest: '휴일' } as const;
 const ROUND_UNITS = [1, 5, 10, 15, 30, 60];
 const kstNow = () => new Date(Date.now() + 9 * 3600_000).toISOString();
-
-/** Worker 오류 + VALIDATION details·MONTH_CLOSED dates 를 함께. */
-const errText = (e: unknown) => {
-  const d = e instanceof AttendanceError ? (e.data as { details?: unknown; dates?: unknown } | undefined) : undefined;
-  const extra = Array.isArray(d?.details) ? d.details.join(', ') : Array.isArray(d?.dates) ? d.dates.join(', ') : '';
-  return extra ? `${errorText(e)} (${extra})` : errorText(e);
-};
 
 /** breaks JSON ↔ '12:00-13:00, 00:00-01:00' */
 const breaksText = (json: string) => {
@@ -64,7 +57,7 @@ function ShiftTypes() {
   const load = useCallback(() => {
     att<ShiftType[]>('GET', '/api/admin/shift-types')
       .then((r) => setRows(r.map((x) => ({ ...x, breaksText: breaksText(x.breaks) }))))
-      .catch((e) => { setRows([]); setError(errText(e)); });
+      .catch((e) => { setRows([]); setError(errorText(e)); });
   }, []);
   useEffect(load, [load]);
 
@@ -78,11 +71,11 @@ function ShiftTypes() {
     try {
       const body = { rows: rows.map((r) => ({ code: r.code.trim(), name: r.name.trim(), kind: r.kind, start: r.start || null, end: r.end || null, fri_start: r.fri_start || null, fri_end: r.fri_end || null, breaks: parseBreaks(r.breaksText), color: r.color || null })) };
       const res = await att<{ note?: string }>('PUT', '/api/admin/shift-types', { body });
-      await logEvent('attendance.rules', { targetId: 'shift_types', meta: { op: 'shift_types', rows: body.rows.length } });
+      await logEvent('attendance.rules', { meta: { op: 'shift_types', rows: body.rows.length } });
       setMsg(`근무형태를 저장했습니다. ${res.note ?? ''}`);
       load();
     } catch (e) {
-      setError(errText(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -154,7 +147,7 @@ function RuleForm() {
     let ok = true;
     att<{ effective: Rules; versions: RuleVersion[] }>('GET', '/api/admin/rules', { query: { ym: month } })
       .then((r) => { if (ok) { setRules(r.effective); setVersions(r.versions); } })
-      .catch((e) => ok && setError(errText(e)));
+      .catch((e) => ok && setError(errorText(e)));
     return () => { ok = false; };
   }, [month, reload]);
 
@@ -178,11 +171,11 @@ function RuleForm() {
       const { overtimeMode, roundUnitMin, nightIncludesBreaks, punchWindowBeforeMin, punchWindowAfterMin, closeDay } = rules;
       const body = { effective_month: month, rules: { overtimeMode, roundUnitMin, nightIncludesBreaks, punchWindowBeforeMin, punchWindowAfterMin, closeDay } };
       const res = await att<{ id: number; note?: string }>('POST', '/api/admin/rules', { body });
-      await logEvent('attendance.rules', { targetId: month, meta: { op: 'rules', id: res.id, ...body.rules } });
+      await logEvent('attendance.rules', { meta: { month, op: 'rules', id: res.id, ...body.rules } });
       setMsg(`규칙 버전 #${res.id} 를 저장했습니다. ${res.note ?? ''}`);
       setReload((n) => n + 1);
     } catch (e) {
-      setError(errText(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -259,7 +252,7 @@ function Holidays() {
     setError('');
     att<Holiday[]>('GET', '/api/admin/holidays', { query: { year: String(year) } })
       .then((r) => ok && setRows(r))
-      .catch((e) => { if (ok) { setRows([]); setError(errText(e)); } });
+      .catch((e) => { if (ok) { setRows([]); setError(errorText(e)); } });
     return () => { ok = false; };
   }, [year, reload]);
 
@@ -274,11 +267,11 @@ function Holidays() {
     try {
       const body = { year, rows: rows.map((r) => ({ date: r.date, name: r.name.trim() })).sort((a, b) => a.date.localeCompare(b.date)) };
       const res = await att<{ note?: string }>('PUT', '/api/admin/holidays', { body });
-      await logEvent('attendance.rules', { targetId: String(year), meta: { op: 'holidays', rows: body.rows.length } });
+      await logEvent('attendance.rules', { meta: { year, op: 'holidays', rows: body.rows.length } });
       setMsg(`공휴일을 저장했습니다. ${res.note ?? ''}`);
       setReload((n) => n + 1);
     } catch (e) {
-      setError(errText(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

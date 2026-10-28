@@ -49,7 +49,7 @@ export function CorrectionsTab({ onChanged }: { onChanged: () => void }) {
     setError('');
     try {
       await att('POST', `/api/admin/corrections/${c.id}`, { body: { decision, note: text } });
-      await logEvent('attendance.correction', { targetId: String(c.id), meta: { sabun: c.sabun, date: c.work_date, decision } });
+      await logEvent('attendance.correction', { meta: { correctionId: c.id, sabun: c.sabun, date: c.work_date, decision } });
       setRejecting(null);
       setNote('');
       load();
