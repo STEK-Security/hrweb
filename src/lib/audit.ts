@@ -41,7 +41,16 @@ export type AuditAction =
   | 'delete_evaluation'
   | 'toggle_account'
   | 'update_settings'
-  | 'change_password';
+  | 'change_password'
+  | 'attendance.view'
+  | 'attendance.schedule'
+  | 'attendance.rules'
+  | 'attendance.correction'
+  | 'attendance.employee'
+  | 'attendance.close'
+  | 'attendance.reopen'
+  | 'attendance.export'
+  | 'attendance.pattern';
 
 export interface LogEventOptions {
   targetId?: string | null;
