@@ -23,6 +23,7 @@ export function EmployeesTab() {
   const [emps, setEmps] = useState<Emp[] | null>(null);
   const [groups, setGroups] = useState<string[]>([]);
   const [q, setQ] = useState('');
+  const [showRetired, setShowRetired] = useState(false); // 기본은 퇴사자 숨김
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
   const [edit, setEdit] = useState<Emp | null>(null);
@@ -93,7 +94,9 @@ export function EmployeesTab() {
   };
 
   // 근태 대상은 천안(생산·품질·물류 등) 근무자 — 직원명부 근무지 기준
-  const shown = emps?.filter((e) => e.site === '천안' && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
+  const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10); // KST
+  const retired = (e: Emp) => !!e.retire_date && e.retire_date < today; // 퇴직일이 지난 사람만(퇴직 예정자는 재직)
+  const shown = emps?.filter((e) => e.site === '천안' && (showRetired || !retired(e)) && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
   const unknownGroup = !!draft.group && !groups.includes(draft.group);
 
   return (
@@ -105,6 +108,10 @@ export function EmployeesTab() {
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors disabled:opacity-50 cursor-pointer">
           {busy ? '가져오는 중…' : '직원명부에서 가져오기'}
         </button>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} className="w-4 h-4" />
+          퇴사자 보기
+        </label>
         <span className="text-[11px] text-slate-500">사번·이름·그룹웨어ID·소속·직책·입사/퇴직일·근무지·성별·출생연도만 보냅니다.</span>
       </div>
       {error && <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
