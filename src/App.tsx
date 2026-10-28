@@ -16,6 +16,7 @@ import { OrgChartPage } from './features/org/OrgChartPage';
 import { DataQualityPage } from './features/quality/DataQualityPage';
 import { TransfersPage } from './features/transfers/TransfersPage';
 import { CalendarPage } from './features/calendar/CalendarPage';
+import { AttendancePage } from './features/attendance/AttendancePage';
 import { TrainingPage } from './features/training/TrainingPage';
 import { MailPage } from './features/mail/MailPage';
 import { EvaluationPage } from './features/evaluation/EvaluationPage';
@@ -34,7 +35,7 @@ export default function App() {
   const handleSelectMenu = (menu: ActiveMenu) => {
     if (ADMIN_ONLY_MENUS.includes(menu) && !isAdmin) return; // 관리자 외 화면 접근 차단
     setActiveMenu(menu);
-    logEvent('view_screen', { meta: { screen: menu } });
+    logEvent(menu === '근태관리' ? 'attendance.view' : 'view_screen', { meta: { screen: menu } });
   };
 
   if (loading) {
@@ -102,6 +103,8 @@ export default function App() {
           <CalendarPage />
         ) : activeMenu === '메일발송' ? (
           <MailPage />
+        ) : activeMenu === '근태관리' ? (
+          <AttendancePage />
         ) : activeMenu === '교육관리' ? (
           <TrainingPage />
         ) : activeMenu === '평가관리' ? (

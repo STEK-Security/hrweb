@@ -20,6 +20,7 @@ import {
   Mail,
   KeyRound,
   ChevronDown,
+  Clock,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 import { PasswordChangeModal } from './PasswordChangeModal';
@@ -119,6 +120,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: '휴직자관리',
       label: '휴직자 관리',
       icon: <UserCheck className="w-4 h-4" />,
+    },
+    {
+      id: '근태관리',
+      label: '근태관리',
+      icon: <Clock className="w-4 h-4" />,
     },
     {
       id: '교육관리',
