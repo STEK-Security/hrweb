@@ -13,7 +13,7 @@
 // =============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allowed, EMPLOYEE_COLUMNS, toIngestEmployee, type HrEmployee } from "./routes.ts";
+import { allowed, dedupeLogins, EMPLOYEE_COLUMNS, toIngestEmployee, type HrEmployee } from "./routes.ts";
 
 const TIMEOUT_MS = 20000;
 
@@ -76,23 +76,28 @@ Deno.serve(async (req: Request) => {
       const { data: emps, error: empErr } = await callerClient.from("employees").select(EMPLOYEE_COLUMNS).is("deleted_at", null).order("사번");
       if (empErr) return jsonResponse({ error: "read_failed", message: `직원명부 조회 실패: ${empErr.message}` }, 500, origin);
       const all = (emps ?? []) as unknown as HrEmployee[];
-      const rows = all.map(toIngestEmployee).filter((r) => r !== null);
+      const { rows: deduped, conflicts } = dedupeLogins(all.map(toIngestEmployee).filter((r) => r !== null));
+      // 비켜 준 행(ID~사번)을 먼저 보내 기존 ID 소유를 풀고, 그다음 나머지를 보낸다.
+      const moved = deduped.filter((r) => r.gw_id!.includes("~"));
+      const rows = deduped;
       let upserted = 0, accountsCreated = 0;
       const rejected: unknown[] = [];
-      for (let i = 0; i < rows.length; i += 500) { // Worker 적재 상한 500행
+      const chunks = [moved, deduped.filter((r) => !r.gw_id!.includes("~"))]
+        .flatMap((list) => Array.from({ length: Math.ceil(list.length / 500) }, (_, k) => list.slice(k * 500, k * 500 + 500))); // Worker 적재 상한 500행
+      for (const chunk of chunks) {
         const res = await fetch(`${apiUrl}/api/ingest/employees`, {
           method: "POST",
           headers: { Authorization: `Bearer ${ingestToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ rows: rows.slice(i, i + 500) }),
+          body: JSON.stringify({ rows: chunk }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
         const out = await res.json().catch(() => ({}));
         if (!res.ok) return jsonResponse({ error: out.error ?? "upstream", message: out.message ?? `근태 서버 오류 ${res.status}`, upserted }, res.status, origin);
         upserted += out.upserted ?? 0;
         accountsCreated += out.accountsCreated ?? 0;
-        for (const r of out.rejected ?? []) rejected.push({ ...r, sabun: (rows[i + r.index] as { sabun: string }).sabun });
+        for (const r of out.rejected ?? []) rejected.push({ ...r, sabun: chunk[r.index]?.sabun });
       }
-      return jsonResponse({ total: all.length, skippedNoLoginId: all.length - rows.length, upserted, accountsCreated, rejected }, 200, origin);
+      return jsonResponse({ total: all.length, skippedNoLoginId: all.length - rows.length, upserted, accountsCreated, rejected, conflicts }, 200, origin);
     }
 
     const { method, path, query, body } = payload ?? {};

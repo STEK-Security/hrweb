@@ -81,7 +81,8 @@ export function EmployeesTab() {
       await logEvent('attendance.employee', { meta: { op: 'sync', upserted: r.upserted, rejected: r.rejected.length } });
       setMsg(`직원명부 ${r.total}명 중 ${r.upserted}명을 반영했습니다(새 계정 ${r.accountsCreated}개).`
         + (r.skippedNoLoginId ? ` 그룹웨어ID 없음 ${r.skippedNoLoginId}명 제외.` : '')
-        + (r.rejected.length ? ` 거부 ${r.rejected.length}건: ${r.rejected.slice(0, 3).map((x) => `${x.sabun} ${x.reason}`).join(', ')}` : ''));
+        + (r.rejected.length ? ` 거부 ${r.rejected.length}건: ${r.rejected.slice(0, 3).map((x) => `${x.sabun} ${x.reason}`).join(', ')}` : '')
+        + (r.conflicts.length ? ` 재직자끼리 로그인 ID 가 겹침(최근 입사자만 로그인 가능 — 직원명부 그룹웨어ID 확인): ${r.conflicts.map((c) => c.join('·')).join(', ')}` : ''));
       load();
     } catch (e) {
       setError(errorText(e));

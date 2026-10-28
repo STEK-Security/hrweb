@@ -40,7 +40,7 @@ export async function att<T>(method: AttMethod, path: string, opts: AttOptions =
   throw new AttendanceError(0, 'network', error.message);
 }
 
-export type SyncResult = { total: number; skippedNoLoginId: number; upserted: number; accountsCreated: number; rejected: { sabun: string; reason: string }[] };
+export type SyncResult = { total: number; skippedNoLoginId: number; upserted: number; accountsCreated: number; rejected: { sabun: string; reason: string }[]; conflicts: string[][] };
 
 /** 직원명부 → 근태 직원 동기화(Edge Function 이 필요한 열만 읽어 보낸다). */
 export async function syncEmployees(): Promise<SyncResult> {

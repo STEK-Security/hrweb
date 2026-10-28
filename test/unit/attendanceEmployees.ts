@@ -15,3 +15,17 @@ assert.equal(toIngestEmployee({ ...base, 그룹웨어ID: '@stek.kr' }), null);
 assert.equal(toIngestEmployee({ ...base, 사번: ' ' }), null);
 assert.equal(toIngestEmployee({ ...base, 생년월일: null })?.birth_year, null);
 console.log('attendanceEmployees: ok');
+
+import { dedupeLogins } from '../../supabase/functions/attendance/routes';
+const row = (sabun: string, gw: string, retire: string | null, hire: string) => ({ ...toIngestEmployee({ ...base, 사번: sabun, 그룹웨어ID: gw, 퇴직일: retire, 입사일: hire })! });
+{
+  const { rows, conflicts } = dedupeLogins([row('1', 'kim@stek.kr', '2022-01-01', '2019-01-01'), row('2', 'kim@stek.kr', null, '2023-01-01'), row('3', 'lee', null, '2020-01-01')]);
+  assert.deepEqual(rows.map((r) => r.gw_id), ['kim~1', 'kim', 'lee']); // 재직자가 ID 를 가진다
+  assert.deepEqual(conflicts, []);
+}
+{
+  const { rows, conflicts } = dedupeLogins([row('5', 'park@a.com', null, '2020-01-01'), row('6', 'park@b.com', null, '2024-01-01')]);
+  assert.deepEqual(rows.map((r) => r.gw_id), ['park~5', 'park']); // 둘 다 재직 → 최근 입사자
+  assert.deepEqual(conflicts, [['6', '5']]);
+}
+console.log('attendanceEmployees dedupe: ok');

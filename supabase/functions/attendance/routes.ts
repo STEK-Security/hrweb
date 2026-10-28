@@ -44,3 +44,20 @@ export function toIngestEmployee(e: HrEmployee): Record<string, string | null> |
     hire_date: e.입사일, retire_date: e.퇴직일, site: e.근무지, gender: e.성별, birth_year: e.생년월일?.slice(0, 4) ?? null,
   };
 }
+
+type IngestRow = NonNullable<ReturnType<typeof toIngestEmployee>>;
+// 로그인 ID('@' 앞) 가 겹치면 재직자 → 최근 입사자가 ID 를 갖고, 나머지는 `ID~사번` 으로 비켜 준다(퇴사자는 로그인 불가라 무해).
+// 재직자끼리 겹치면 직원명부를 고쳐야 하므로 conflicts 로 알린다.
+export function dedupeLogins(rows: IngestRow[]): { rows: IngestRow[]; conflicts: string[][] } {
+  const by = new Map<string, IngestRow[]>();
+  for (const r of rows) by.set(r.gw_id!, [...(by.get(r.gw_id!) ?? []), r]);
+  const conflicts: string[][] = [];
+  const out = rows.map((r) => ({ ...r }));
+  for (const [id, g] of by) {
+    if (g.length < 2) continue;
+    const rank = [...g].sort((a, b) => Number(!!a.retire_date) - Number(!!b.retire_date) || (b.hire_date ?? '').localeCompare(a.hire_date ?? ''));
+    if (rank.filter((r) => !r.retire_date).length > 1) conflicts.push(rank.filter((r) => !r.retire_date).map((r) => r.sabun!));
+    for (const loser of rank.slice(1)) out.find((r) => r.sabun === loser.sabun)!.gw_id = `${id}~${loser.sabun}`;
+  }
+  return { rows: out, conflicts };
+}
