@@ -19,6 +19,8 @@ interface Emp {
   night_consent: number;
   attendance_target: number;
   approver_override: string | null;
+  /** 실제 승인자 사번 또는 'HR' (Worker 계산: 지정값 > 직원명부 팀장 > 인사팀) */
+  approver: string;
   shift_group: string | null;
   has_account: number;
 }
@@ -102,6 +104,8 @@ export function EmployeesTab() {
   const inScope = (e: Emp) => (e.dept_path ?? '').split(' > ').some((d) => SCOPE_DEPTS.includes(d.trim()));
   const retired = (e: Emp) => !!e.retire_date && e.retire_date < today; // 퇴직일이 지난 사람만(퇴직 예정자는 재직)
   const shown = emps?.filter((e) => e.site === '천안' && inScope(e) && (showRetired || !retired(e)) && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
+  const nameOf = (sabun: string) => (sabun === 'HR' ? '인사팀' : emps?.find((x) => x.sabun === sabun)?.name ?? sabun);
+  const approverText = (e: Emp) => `${nameOf(e.approver)} (${e.approver_override ? '지정' : e.approver === 'HR' ? '팀장 없음' : '팀장 자동'})`;
   const unknownGroup = !!draft.group && !groups.includes(draft.group);
 
   return (
@@ -137,7 +141,7 @@ export function EmployeesTab() {
                   <td className="px-3 py-2 whitespace-nowrap">{e.shift_group ?? '없음'}</td>
                   <td className="px-3 py-2">{e.attendance_target ? 'O' : '—'}</td>
                   <td className="px-3 py-2">{e.night_consent ? 'O' : '—'}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{e.approver_override ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{approverText(e)}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <button type="button" onClick={() => open(e)} className="px-2.5 py-1 rounded-md border border-slate-200 font-semibold text-slate-700 cursor-pointer">편집</button>{' '}
                     <button type="button" onClick={() => reset(e)} disabled={!e.has_account} className="px-2.5 py-1 rounded-md border border-slate-200 font-semibold text-slate-700 cursor-pointer disabled:opacity-40">비밀번호 초기화</button>
@@ -168,7 +172,7 @@ export function EmployeesTab() {
               <input type="checkbox" checked={draft.night} onChange={(e) => setDraft({ ...draft, night: e.target.checked })} /> 야간근로 동의
             </label>
             <label className="block text-xs font-semibold text-slate-600">
-              승인자 (사번 또는 HR, 비우면 기본)
+              승인자 (사번 또는 HR, 비우면 직원명부 팀장 자동 — 지금: {approverText(edit)})
               <input list="att-approvers" value={draft.approver} onChange={(e) => setDraft({ ...draft, approver: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-normal" />
               <datalist id="att-approvers">
                 <option value="HR">인사팀</option>
