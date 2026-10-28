@@ -11,6 +11,7 @@ interface Emp {
   dept: string | null;
   title: string | null;
   retire_date: string | null;
+  site: string | null;
   night_consent: number;
   attendance_target: number;
   approver_override: string | null;
@@ -91,7 +92,8 @@ export function EmployeesTab() {
     }
   };
 
-  const shown = emps?.filter((e) => !q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim()));
+  // 근태 대상은 천안(생산·품질·물류 등) 근무자 — 직원명부 근무지 기준
+  const shown = emps?.filter((e) => e.site === '천안' && (!q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim())));
   const unknownGroup = !!draft.group && !groups.includes(draft.group);
 
   return (

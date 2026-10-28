@@ -37,8 +37,8 @@ export type HrEmployee = {
 export const EMPLOYEE_COLUMNS = '"사번","성명","그룹웨어ID","소속","전체소속명","직책","입사일","퇴직일","근무지","성별","생년월일"';
 
 export function toIngestEmployee(e: HrEmployee): Record<string, string | null> | null {
-  const gw = e.그룹웨어ID?.trim().split('@')[0]; // 로그인은 '@' 앞부분(이메일 로그인 시 Worker 도 같은 정규화)
-  if (!e.사번?.trim() || !e.성명?.trim() || !gw) return null;
+  const gw = e.그룹웨어ID?.trim().toLowerCase(); // 로그인 ID = 그룹웨어 이메일 전체(도메인이 사람마다 다르다)
+  if (!e.사번?.trim() || !e.성명?.trim() || !gw || gw.startsWith('@')) return null;
   return {
     sabun: e.사번.trim(), name: e.성명.trim(), gw_id: gw, dept: e.소속, dept_path: e.전체소속명, title: e.직책,
     hire_date: e.입사일, retire_date: e.퇴직일, site: e.근무지, gender: e.성별, birth_year: e.생년월일?.slice(0, 4) ?? null,
@@ -46,7 +46,7 @@ export function toIngestEmployee(e: HrEmployee): Record<string, string | null> |
 }
 
 type IngestRow = NonNullable<ReturnType<typeof toIngestEmployee>>;
-// 로그인 ID('@' 앞) 가 겹치면 재직자 → 최근 입사자가 ID 를 갖고, 나머지는 `ID~사번` 으로 비켜 준다(퇴사자는 로그인 불가라 무해).
+// 같은 이메일이 여러 사번에 있으면 재직자 → 최근 입사자가 갖고, 나머지는 `이메일~사번` 으로 비켜 준다(퇴사자는 로그인 불가라 무해).
 // 재직자끼리 겹치면 직원명부를 고쳐야 하므로 conflicts 로 알린다.
 export function dedupeLogins(rows: IngestRow[]): { rows: IngestRow[]; conflicts: string[][] } {
   const by = new Map<string, IngestRow[]>();
