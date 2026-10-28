@@ -17,10 +17,8 @@ export const FLAG_LABELS: Record<string, string> = {
   unknown_leave_type: '알 수 없는 휴가 종류',
   night_no_consent: '야간근로 미동의',
   minor_night: '연소자 야간근로',
-  // 아래는 matrix 칸 상태에서 끌어낸 경고(cellWarnings)
+  // flags 없는 칸의 상태에서 끌어낸 경고(cellWarnings)
   missing: '출퇴근 누락',
-  late: '지각',
-  early: '조퇴',
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -81,7 +79,7 @@ export function errorText(e: unknown): string {
 export interface MatrixCell {
   shift: string | null;
   status: string;
-  /** Worker matrix 는 아직 flags 를 주지 않는다 — 주면 그대로 쓴다. */
+  /** 경고 코드. 비어 있으면 Worker 가 생략한다. */
   flags?: string[];
 }
 
@@ -96,27 +94,11 @@ export function cellLabel(c: MatrixCell | undefined): string {
   return c.shift ? c.shift.slice(0, 1) : '';
 }
 
-/**
- * 칸의 경고 코드. flags 가 오면 그것을, 없으면 상태에서 끌어낸다.
- * shortcut: matrix 에 flags 가 없어 휴게 부족·종업 이후·주52h 는 상태로 알 수 없다 — Worker matrix 가 flags 를 주면 자동으로 정확해진다.
- */
+/** 칸의 경고 코드 = matrix flags. flags 가 없을 때만 누락·결근 상태로 대신한다. */
 export function cellWarnings(c: MatrixCell | undefined): string[] {
   if (!c) return [];
-  if (c.flags) return c.flags;
-  switch (c.status) {
-    case 'missing':
-      return ['missing'];
-    case 'absent':
-      return ['absent'];
-    case 'off_worked':
-      return ['off_day_work'];
-    case 'late':
-      return ['late'];
-    case 'early':
-      return ['early'];
-    default:
-      return [];
-  }
+  if (c.flags?.length) return c.flags;
+  return c.status === 'missing' || c.status === 'absent' ? [c.status] : [];
 }
 
 /** 'YYYY-MM' 을 n 달 이동. */

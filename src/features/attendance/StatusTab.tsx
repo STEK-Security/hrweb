@@ -29,7 +29,6 @@ interface Emp {
   sabun: string;
   name: string;
   dept: string | null;
-  shift_group: string | null;
   attendance_target: number;
 }
 interface Confirmation {
@@ -40,6 +39,7 @@ interface MatrixRow {
   sabun: string;
   name: string;
   dept: string | null;
+  shiftGroup: string | null;
   cells: Record<string, MatrixCell>;
 }
 interface Matrix {
@@ -122,18 +122,17 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
     };
   }, [ym, reloadKey]);
 
-  const groupOf = useMemo(() => new Map(data?.emps.map((e) => [e.sabun, e.shift_group]) ?? []), [data]);
-  const groups = useMemo(() => [...new Set(data?.emps.map((e) => e.shift_group).filter((g): g is string => !!g))].sort(), [data]);
+  const groups = useMemo(() => [...new Set(data?.matrix.rows.map((r) => r.shiftGroup).filter((g): g is string => !!g))].sort(), [data]);
   const depts = useMemo(() => [...new Set(data?.matrix.rows.map((r) => r.dept).filter((d): d is string => !!d))].sort(), [data]);
 
   const rows = useMemo(
     () =>
       (data?.matrix.rows ?? []).filter((r) => {
-        const g = groupOf.get(r.sabun) ?? null;
+        const g = r.shiftGroup;
         if (group && (group === NONE ? g : g !== group)) return false;
         return !dept || r.dept === dept;
       }),
-    [data, group, dept, groupOf],
+    [data, group, dept],
   );
 
   // 경고 종류 → (직원·날짜) 목록
@@ -275,7 +274,7 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
                       <th scope="row" className="sticky left-0 z-10 bg-white group-hover:bg-slate-50 px-3 py-1 text-left font-semibold text-slate-800 border-b border-slate-50 whitespace-nowrap">
                         {r.name}
                         <span className="block text-[9px] font-normal text-slate-400">
-                          {r.dept ?? '-'} · {groupOf.get(r.sabun) ?? '미지정'}
+                          {r.dept ?? '-'} · {r.shiftGroup ?? '미지정'}
                         </span>
                       </th>
                       {data!.matrix.dates.map((d) => {
@@ -346,9 +345,6 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
               ))}
             </ul>
           )}
-          <p className="mt-3 text-[10px] text-slate-400 leading-relaxed">
-            근태 서버의 일별 상태 기준입니다. 휴게 부족·종업 이후 근로·주 52시간은 일별 상세에서 확인하세요.
-          </p>
         </aside>
       </div>
 
