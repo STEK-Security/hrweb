@@ -67,6 +67,10 @@ export const ERROR_LABELS: Record<string, string> = {
   VALIDATION: '입력값을 확인하세요.',
   NOT_FOUND: '대상을 찾을 수 없습니다.',
   MONTH_CLOSED: '마감된 달은 수정할 수 없습니다.',
+  ALREADY_CLOSED: '이미 마감된 달입니다.',
+  ALREADY_CLOSING: '이미 마감 중인 달입니다.',
+  NOT_CLOSED: '마감되지 않은 달입니다.',
+  CLOSED_MONTH_RULE: '적용 시작 월은 마지막 마감 달 이후여야 합니다.',
 };
 
 /** AttendanceError·기타 오류를 화면 문구로. */

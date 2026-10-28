@@ -70,7 +70,7 @@ export function AttendancePage() {
         ) : tab === '정정·승인' ? (
           <CorrectionsTab onChanged={reloadPending} />
         ) : tab === '확정·마감' ? (
-          <CloseTab />
+          <CloseTab ym={ym} onChangeYm={setYm} />
         ) : tab === '규칙' ? (
           <RulesTab />
         ) : (
