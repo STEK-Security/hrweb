@@ -1,10 +1,7 @@
 -- 0036_attendance_patterns.sql
 -- 근태관리 '근무표' 탭의 근무조 28일 패턴. 근태 데이터 사본은 Supabase 에 두지 않는다는 원칙의 유일한 예외
 -- (패턴은 hr.stek.kr 만 쓰는 입력 도구이고, 실제 근무표는 Worker `PUT /api/admin/schedules` 로 들어간다).
---
--- applied_pattern·applied_anchor: 이 근무조에 마지막으로 '적용'한 패턴. Worker 근무표 행에는 note 가 없어
--- (GET 이 돌려주지 않고 PUT 도 저장하지 않음) 기존 칸이 패턴으로 넣은 것인지 직접 수정한 것인지 알 수 없다.
--- 마지막 적용 패턴과 같은 값이면 패턴 칸으로 보고 덮어쓰며, 다르면 직접 수정한 칸으로 보고 보존한다.
+-- 근무표 칸이 패턴으로 넣은 것인지는 Worker schedules.note(`pattern:<조>`)로 구분한다 — 여기엔 적용 이력을 두지 않는다.
 --
 -- 재실행 안전: if not exists / on conflict do nothing / drop policy if exists.
 
@@ -12,8 +9,6 @@ create table if not exists public.attendance_shift_patterns (
   group_name text primary key,
   anchor_date date not null,
   pattern text[] not null check (array_length(pattern, 1) = 28),
-  applied_pattern text[] check (applied_pattern is null or array_length(applied_pattern, 1) = 28),
-  applied_anchor date,
   updated_at timestamptz not null default now(),
   updated_by uuid default auth.uid()
 );

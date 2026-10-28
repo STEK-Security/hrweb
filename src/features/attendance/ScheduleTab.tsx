@@ -9,14 +9,12 @@ import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODE_LABELS, addDays, buildCells, cycle, inferNote, type PatternRow } from './pattern';
+import { CODE_LABELS, addDays, buildCells, cycle, type PatternRow } from './pattern';
 
 interface PatternDb {
   group_name: string;
   anchor_date: string;
   pattern: string[];
-  applied_pattern: string[] | null;
-  applied_anchor: string | null;
 }
 interface Emp {
   sabun: string;
@@ -33,6 +31,7 @@ interface SchedRow {
   sabun: string;
   work_date: string;
   shift_code: string;
+  note: string | null;
 }
 interface Preview {
   rows: PatternRow[];
@@ -78,7 +77,7 @@ export function ScheduleTab() {
 
   const loadPatterns = useCallback(async () => {
     if (!supabase) return setError('Supabase 미연결');
-    const { data, error: e } = await supabase.from(TABLE).select('group_name, anchor_date, pattern, applied_pattern, applied_anchor').order('group_name');
+    const { data, error: e } = await supabase.from(TABLE).select('group_name, anchor_date, pattern').order('group_name');
     if (e) return setError(e.message);
     setPatterns(data as PatternDb[]);
   }, []);
@@ -126,6 +125,7 @@ export function ScheduleTab() {
   const addGroup = () =>
     run(async () => {
       const name = newName.trim();
+      // note 'pattern:<조>' 는 Worker 상한 40자 — 이름 30자면 38자
       if (!name || name.length > 30) throw new Error('근무조 이름을 1~30자로 입력하세요.');
       if (patterns.some((p) => p.group_name === name)) throw new Error('이미 있는 근무조입니다.');
       const { error: e } = await supabase!.from(TABLE).insert({ group_name: name, anchor_date: draft?.anchor ?? '2026-11-02', pattern: Array(28).fill('REST') });
@@ -167,11 +167,7 @@ export function ScheduleTab() {
       ]);
       const holidays = new Set(hols.flat().map((h) => h.date));
       const mine = new Set(sabuns);
-      const applied = current.applied_pattern && current.applied_anchor ? { pattern: current.applied_pattern, anchor: current.applied_anchor } : null;
-      const existing = scheds
-        .flat()
-        .filter((r) => mine.has(r.sabun))
-        .map((r) => ({ ...r, note: inferNote(r, applied, holidays, current.group_name) }));
+      const existing = scheds.flat().filter((r) => mine.has(r.sabun));
       const r = buildCells(draft.pattern, draft.anchor, from, to, sabuns, existing, {
         group: current.group_name,
         holidays,
@@ -185,7 +181,7 @@ export function ScheduleTab() {
   const apply = () =>
     run(async () => {
       if (!current || !draft || !preview) return;
-      const rows = preview.rows.map(({ sabun, work_date, shift_code }) => ({ sabun, work_date, shift_code }));
+      const rows = preview.rows;
       setProgress({ done: 0, total: rows.length });
       for (let i = 0; i < rows.length; i += CHUNK) {
         try {
@@ -196,12 +192,9 @@ export function ScheduleTab() {
         }
         setProgress({ done: Math.min(i + CHUNK, rows.length), total: rows.length });
       }
-      const { error: e } = await supabase!.from(TABLE).update({ applied_pattern: draft.pattern, applied_anchor: draft.anchor }).eq('group_name', current.group_name);
       await logEvent('attendance.schedule', { meta: { group: current.group_name, from, to, rows: rows.length, skipped: preview.skipped } });
       setPreview(null);
-      await loadPatterns();
-      // 근무표는 이미 저장됐다 — 적용 이력만 못 남기면 다음 적용 때 이번 칸을 '개별 수정'으로 보고 보존한다(안전한 쪽).
-      setMsg(`${rows.length}칸을 저장했습니다.${e ? ` (적용 이력 저장 실패: ${e.message})` : ''}`);
+      setMsg(`${rows.length}칸을 저장했습니다.`);
     }).finally(() => setProgress(null));
 
   return (

@@ -65,17 +65,3 @@ export function buildCells(
   return { rows, skipped };
 }
 
-/**
- * Worker 근무표 행에는 note 가 없다(GET 이 돌려주지 않고 PUT 도 저장하지 않음) — 그래서 hrweb 이 마지막으로
- * 적용한 패턴과 같은 값(또는 공휴일의 REST)이면 패턴이 넣은 칸으로 본다. 다르면 직접 수정한 칸.
- */
-export function inferNote(
-  r: { work_date: string; shift_code: string },
-  applied: { pattern: string[]; anchor: string } | null,
-  holidays: Set<string>,
-  group: string,
-): string | null {
-  if (!applied) return null;
-  const ok = r.shift_code === codeAt(applied.pattern, applied.anchor, r.work_date) || (r.shift_code === 'REST' && holidays.has(r.work_date));
-  return ok ? `pattern:${group}` : null;
-}

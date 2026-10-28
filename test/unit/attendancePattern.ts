@@ -3,7 +3,7 @@
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';
-import { buildCells, codeAt, cycle, inferNote } from '../../src/features/attendance/pattern';
+import { buildCells, codeAt, cycle } from '../../src/features/attendance/pattern';
 
 const A = [
   ...Array(5).fill('DAY'), 'REST', 'REST', ...Array(5).fill('DAY'), 'REST', 'REST',
@@ -60,7 +60,7 @@ const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11
 {
   const existing = [
     { sabun: '1001', work_date: '2026-11-02', shift_code: 'NIGHT', note: null }, // 직접 수정
-    { sabun: '1001', work_date: '2026-11-03', shift_code: 'NIGHT', note: 'pattern:B조' }, // 이전 패턴
+    { sabun: '1001', work_date: '2026-11-03', shift_code: 'NIGHT', note: 'pattern:B조' }, // 다른 조 패턴(조 이동) → 덮어씀
     { sabun: '1001', work_date: '2026-11-04', shift_code: 'DAY', note: 'pattern:A조' }, // 이미 같음
     { sabun: '1001', work_date: '2026-11-05', shift_code: 'REST', note: 'hr' }, // 직접 수정
   ];
@@ -73,14 +73,4 @@ const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11
 // 패턴 길이 검사
 assert.throws(() => buildCells(['DAY'], anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
 
-// Worker 행엔 note 가 없다 → 마지막 적용 패턴과 같으면 패턴 칸, 다르면 직접 수정
-{
-  const applied = { pattern: A, anchor };
-  const hol = new Set(['2026-11-03']);
-  assert.equal(inferNote({ work_date: '2026-11-02', shift_code: 'DAY' }, applied, hol, 'A조'), 'pattern:A조');
-  assert.equal(inferNote({ work_date: '2026-11-02', shift_code: 'NIGHT' }, applied, hol, 'A조'), null);
-  assert.equal(inferNote({ work_date: '2026-11-03', shift_code: 'REST' }, applied, hol, 'A조'), 'pattern:A조', '공휴일 휴일');
-  assert.equal(inferNote({ work_date: '2026-11-02', shift_code: 'DAY' }, null, hol, 'A조'), null, '적용 이력 없으면 모두 보존');
-}
-
-console.log('PASS attendancePattern (28 checks)');
+console.log('PASS attendancePattern (24 checks)');
