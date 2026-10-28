@@ -6,12 +6,14 @@
 // env: SUPABASE_URL, SUPABASE_ANON_KEY (기본 제공),
 //      ATTENDANCE_ADMIN_TOKEN (필수, Worker ADMIN_TOKEN — 브라우저·레포 금지),
 //      ATTENDANCE_API_URL (선택, 기본 https://time.stek.win)
+//      ATTENDANCE_INGEST_TOKEN (직원명부 동기화용, Worker INGEST_TOKEN)
 // 요청: POST { method, path, query?: Record<string,string>, body?: unknown }
+//       또는 { action: 'sync-employees' } — 직원명부(public.employees) 필요한 열만 /api/ingest/employees 로 보낸다
 // 응답: Worker 의 상태코드·본문 그대로. 401 비로그인 / 403 비HR / 400 화이트리스트 밖 / 504 타임아웃.
 // =============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { allowed } from "./routes.ts";
+import { allowed, EMPLOYEE_COLUMNS, toIngestEmployee, type HrEmployee } from "./routes.ts";
 
 const TIMEOUT_MS = 20000;
 
@@ -67,6 +69,32 @@ Deno.serve(async (req: Request) => {
     } catch {
       return jsonResponse({ error: "bad_request", message: "요청 본문이 올바른 JSON이 아닙니다." }, 400, origin);
     }
+    if (payload?.action === "sync-employees") {
+      const ingestToken = Deno.env.get("ATTENDANCE_INGEST_TOKEN");
+      if (!ingestToken) return jsonResponse({ error: "config", message: "ATTENDANCE_INGEST_TOKEN 환경변수가 없습니다." }, 500, origin);
+      // 호출자 권한(RLS)으로 읽는다 — 삭제(soft delete)된 행 제외
+      const { data: emps, error: empErr } = await callerClient.from("employees").select(EMPLOYEE_COLUMNS).is("deleted_at", null).order("사번");
+      if (empErr) return jsonResponse({ error: "read_failed", message: `직원명부 조회 실패: ${empErr.message}` }, 500, origin);
+      const all = (emps ?? []) as unknown as HrEmployee[];
+      const rows = all.map(toIngestEmployee).filter((r) => r !== null);
+      let upserted = 0, accountsCreated = 0;
+      const rejected: unknown[] = [];
+      for (let i = 0; i < rows.length; i += 500) { // Worker 적재 상한 500행
+        const res = await fetch(`${apiUrl}/api/ingest/employees`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${ingestToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: rows.slice(i, i + 500) }),
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) return jsonResponse({ error: out.error ?? "upstream", message: out.message ?? `근태 서버 오류 ${res.status}`, upserted }, res.status, origin);
+        upserted += out.upserted ?? 0;
+        accountsCreated += out.accountsCreated ?? 0;
+        for (const r of out.rejected ?? []) rejected.push({ ...r, sabun: (rows[i + r.index] as { sabun: string }).sabun });
+      }
+      return jsonResponse({ total: all.length, skippedNoLoginId: all.length - rows.length, upserted, accountsCreated, rejected }, 200, origin);
+    }
+
     const { method, path, query, body } = payload ?? {};
     if (typeof method !== "string" || typeof path !== "string" || !allowed(method, path)) {
       return jsonResponse({ error: "bad_request", message: "허용되지 않은 경로입니다." }, 400, origin);

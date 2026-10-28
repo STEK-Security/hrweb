@@ -1,6 +1,6 @@
 /** 근태관리 '직원 설정' 탭 — GET /employees, PATCH /employees/:sabun, POST /accounts/:sabun/reset. */
 import { useCallback, useEffect, useState } from 'react';
-import { att } from '../../lib/attendance';
+import { att, syncEmployees } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText } from './labels';
@@ -72,13 +72,38 @@ export function EmployeesTab() {
     }
   };
 
+  const sync = async () => {
+    setBusy(true);
+    setError('');
+    setMsg('');
+    try {
+      const r = await syncEmployees();
+      await logEvent('attendance.employee', { meta: { op: 'sync', upserted: r.upserted, rejected: r.rejected.length } });
+      setMsg(`직원명부 ${r.total}명 중 ${r.upserted}명을 반영했습니다(새 계정 ${r.accountsCreated}개).`
+        + (r.skippedNoLoginId ? ` 그룹웨어ID 없음 ${r.skippedNoLoginId}명 제외.` : '')
+        + (r.rejected.length ? ` 거부 ${r.rejected.length}건: ${r.rejected.slice(0, 3).map((x) => `${x.sabun} ${x.reason}`).join(', ')}` : ''));
+      load();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const shown = emps?.filter((e) => !q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim()));
   const unknownGroup = !!draft.group && !groups.includes(draft.group);
 
   return (
     <div className="space-y-3">
-      <input aria-label="직원 검색" placeholder="사번·이름·부서 검색" value={q} onChange={(e) => setQ(e.target.value)}
-        className="w-full sm:w-64 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+      <div className="flex flex-wrap items-center gap-2">
+        <input aria-label="직원 검색" placeholder="사번·이름·부서 검색" value={q} onChange={(e) => setQ(e.target.value)}
+          className="w-full sm:w-64 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+        <button type="button" onClick={sync} disabled={busy}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors disabled:opacity-50 cursor-pointer">
+          {busy ? '가져오는 중…' : '직원명부에서 가져오기'}
+        </button>
+        <span className="text-[11px] text-slate-500">사번·이름·그룹웨어ID·소속·직책·입사/퇴직일·근무지·성별·출생연도만 보냅니다.</span>
+      </div>
       {error && <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
       {msg && <p role="status" className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-x-auto">

@@ -28,3 +28,19 @@ export function allowed(method: string, path: string): boolean {
   if (/\.\.|\/\/|[?#]/.test(path)) return false;
   return Object.hasOwn(COMPILED, method) && COMPILED[method].some((re) => re.test(path));
 }
+
+// 직원명부(public.employees) → Worker /api/ingest/employees 행. 필요한 열만 보낸다(주민번호·연락처 등 제외).
+export type HrEmployee = {
+  사번: string | null; 성명: string | null; 그룹웨어ID: string | null; 소속: string | null; 전체소속명: string | null
+  직책: string | null; 입사일: string | null; 퇴직일: string | null; 근무지: string | null; 성별: string | null; 생년월일: string | null
+};
+export const EMPLOYEE_COLUMNS = '"사번","성명","그룹웨어ID","소속","전체소속명","직책","입사일","퇴직일","근무지","성별","생년월일"';
+
+export function toIngestEmployee(e: HrEmployee): Record<string, string | null> | null {
+  const gw = e.그룹웨어ID?.trim().split('@')[0]; // 로그인은 '@' 앞부분(이메일 로그인 시 Worker 도 같은 정규화)
+  if (!e.사번?.trim() || !e.성명?.trim() || !gw) return null;
+  return {
+    sabun: e.사번.trim(), name: e.성명.trim(), gw_id: gw, dept: e.소속, dept_path: e.전체소속명, title: e.직책,
+    hire_date: e.입사일, retire_date: e.퇴직일, site: e.근무지, gender: e.성별, birth_year: e.생년월일?.slice(0, 4) ?? null,
+  };
+}
