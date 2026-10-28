@@ -1,9 +1,148 @@
-/** 근태관리 '직원 설정' 탭 — 자리만 잡아 둔다(Task 4 에서 채움). */
+/** 근태관리 '직원 설정' 탭 — GET /employees, PATCH /employees/:sabun, POST /accounts/:sabun/reset. */
+import { useCallback, useEffect, useState } from 'react';
+import { att } from '../../lib/attendance';
+import { logEvent } from '../../lib/audit';
+import { supabase } from '../../lib/supabase';
+import { errorText } from './labels';
+
+interface Emp {
+  sabun: string;
+  name: string;
+  dept: string | null;
+  title: string | null;
+  retire_date: string | null;
+  night_consent: number;
+  attendance_target: number;
+  approver_override: string | null;
+  shift_group: string | null;
+  has_account: number;
+}
+
 export function EmployeesTab() {
+  const [emps, setEmps] = useState<Emp[] | null>(null);
+  const [groups, setGroups] = useState<string[]>([]);
+  const [q, setQ] = useState('');
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [edit, setEdit] = useState<Emp | null>(null);
+  const [draft, setDraft] = useState({ group: '', target: false, night: false, approver: '' });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    att<Emp[]>('GET', '/api/admin/employees').then(setEmps).catch((e) => { setEmps([]); setError(errorText(e)); });
+  }, []);
+  useEffect(load, [load]);
+  useEffect(() => {
+    supabase?.from('attendance_shift_patterns').select('group_name').order('group_name').then(({ data }) => setGroups((data ?? []).map((r) => r.group_name as string)));
+  }, []);
+
+  const open = (e: Emp) => {
+    setEdit(e);
+    setError('');
+    setDraft({ group: e.shift_group ?? '', target: !!e.attendance_target, night: !!e.night_consent, approver: e.approver_override ?? '' });
+  };
+
+  const save = async () => {
+    if (!edit) return;
+    setBusy(true);
+    setError('');
+    try {
+      const body = { shift_group: draft.group || null, attendance_target: draft.target, night_consent: draft.night, approver_override: draft.approver.trim() || null };
+      await att('PATCH', `/api/admin/employees/${edit.sabun}`, { body });
+      await logEvent('attendance.employee', { targetId: edit.sabun, meta: { op: 'patch', ...body } });
+      setEdit(null);
+      load();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = async (e: Emp) => {
+    if (!window.confirm(`${e.name}(${e.sabun}) 비밀번호를 초기화하시겠습니까? 기존 로그인 세션이 끊깁니다.`)) return;
+    setError('');
+    try {
+      await att('POST', `/api/admin/accounts/${e.sabun}/reset`);
+      await logEvent('attendance.employee', { targetId: e.sabun, meta: { op: 'reset_password' } });
+      setMsg(`${e.name} 비밀번호를 초기화했습니다.`);
+      load();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const shown = emps?.filter((e) => !q || `${e.sabun} ${e.name} ${e.dept ?? ''}`.includes(q.trim()));
+  const unknownGroup = !!draft.group && !groups.includes(draft.group);
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-10 text-center">
-      <p className="text-sm font-bold text-slate-700">직원 설정</p>
-      <p className="mt-1 text-xs text-slate-500">준비 중입니다.</p>
+    <div className="space-y-3">
+      <input aria-label="직원 검색" placeholder="사번·이름·부서 검색" value={q} onChange={(e) => setQ(e.target.value)}
+        className="w-full sm:w-64 border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+      {error && <p role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
+      {msg && <p role="status" className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{msg}</p>}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr className="text-left">{['사번', '이름', '부서', '근무조', '근태 대상', '야간 동의', '승인자', ''].map((h) => <th key={h} className="px-3 py-2 font-semibold whitespace-nowrap">{h}</th>)}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {shown === undefined || shown === null ? <tr><td colSpan={8} className="p-6 text-center text-slate-400">불러오는 중…</td></tr>
+              : shown.length === 0 ? <tr><td colSpan={8} className="p-6 text-center text-slate-400">직원이 없습니다.</td></tr>
+              : shown.map((e) => (
+                <tr key={e.sabun} className={e.retire_date ? 'text-slate-400' : ''}>
+                  <td className="px-3 py-2 whitespace-nowrap">{e.sabun}</td>
+                  <td className="px-3 py-2 whitespace-nowrap font-semibold">{e.name}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{e.dept ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{e.shift_group ?? '없음'}</td>
+                  <td className="px-3 py-2">{e.attendance_target ? 'O' : '—'}</td>
+                  <td className="px-3 py-2">{e.night_consent ? 'O' : '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{e.approver_override ?? '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <button type="button" onClick={() => open(e)} className="px-2.5 py-1 rounded-md border border-slate-200 font-semibold text-slate-700 cursor-pointer">편집</button>{' '}
+                    <button type="button" onClick={() => reset(e)} disabled={!e.has_account} className="px-2.5 py-1 rounded-md border border-slate-200 font-semibold text-slate-700 cursor-pointer disabled:opacity-40">비밀번호 초기화</button>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      {edit && (
+        <div role="dialog" aria-modal="true" aria-label={`${edit.name} 설정`} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+          onKeyDown={(e) => e.key === 'Escape' && setEdit(null)}>
+          <form className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3" onSubmit={(e) => { e.preventDefault(); save(); }}>
+            <h2 className="text-sm font-bold text-slate-900">{edit.name} ({edit.sabun}) 근태 설정</h2>
+            <label className="block text-xs font-semibold text-slate-600">
+              근무조
+              <select value={draft.group} onChange={(e) => setDraft({ ...draft, group: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-normal">
+                <option value="">없음</option>
+                {unknownGroup && <option value={draft.group}>{draft.group} (패턴 없음)</option>}
+                {groups.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <input type="checkbox" checked={draft.target} onChange={(e) => setDraft({ ...draft, target: e.target.checked })} /> 근태 대상
+            </label>
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <input type="checkbox" checked={draft.night} onChange={(e) => setDraft({ ...draft, night: e.target.checked })} /> 야간근로 동의
+            </label>
+            <label className="block text-xs font-semibold text-slate-600">
+              승인자 (사번 또는 HR, 비우면 기본)
+              <input list="att-approvers" value={draft.approver} onChange={(e) => setDraft({ ...draft, approver: e.target.value })} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-normal" />
+              <datalist id="att-approvers">
+                <option value="HR">인사팀</option>
+                {emps?.filter((x) => !x.retire_date && x.sabun !== edit.sabun).map((x) => <option key={x.sabun} value={x.sabun}>{x.name}</option>)}
+              </datalist>
+            </label>
+            {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEdit(null)} className="px-3 py-1.5 text-xs font-semibold text-slate-600 cursor-pointer">취소</button>
+              <button type="submit" disabled={busy} className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold cursor-pointer disabled:opacity-50">저장</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

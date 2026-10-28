@@ -68,7 +68,7 @@ export function AttendancePage() {
         ) : tab === '근무표' ? (
           <ScheduleTab />
         ) : tab === '정정·승인' ? (
-          <CorrectionsTab />
+          <CorrectionsTab onChanged={reloadPending} />
         ) : tab === '확정·마감' ? (
           <CloseTab />
         ) : tab === '규칙' ? (
