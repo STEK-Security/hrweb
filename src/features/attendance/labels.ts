@@ -32,7 +32,7 @@ export const STATUS_LABELS: Record<string, string> = {
   off_worked: '휴무일 근무',
   none: '기록 없음',
   scheduled: '예정',
-  working: '근무 중',
+  working: '판정 전(오늘)', // 서버 'working' = 하루가 끝나지 않아 판정 보류(출근 기록이 없어도 붙는다)
 };
 
 export const MINUTE_LABELS: Record<string, string> = {
