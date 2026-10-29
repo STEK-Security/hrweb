@@ -29,10 +29,10 @@ export const isPatternLength = (n: number) => WEEK_OPTIONS.some((w) => w * 7 ===
 /** 새 근무조 패턴: 전부 휴일. */
 export const newPattern = (weeks: number) => Array<string>(weeks * 7).fill('REST');
 
-/** 주 수 바꾸기: 늘리면 마지막 주를 복사해 붙이고, 줄이면 뒤 주를 버린다. */
+/** 주 수 바꾸기: 늘리면 기본 주간 주(월~금 주간, 토·일 휴일)를 붙이고, 줄이면 뒤 주를 버린다. */
 export const resizeWeeks = (pattern: string[], weeks: number) => {
   const out = pattern.slice(0, weeks * 7);
-  while (out.length < weeks * 7) out.push(...pattern.slice(-7));
+  while (out.length < weeks * 7) out.push(...weekBlock('DAY'));
   return out;
 };
 
@@ -46,11 +46,20 @@ export const weeksOf = (pattern: string[]) =>
     return weekBlock(w[0]).every((c, k) => c === w[k]) ? w[0] : null;
   });
 
-/** 주간(주)·야간(야) 주 순서 템플릿. 이름 글자 = 1주차부터. */
-const T = (names: string[]) => names.map((name) => ({ name, weeks: [...name].map((c) => (c === '야' ? 'NIGHT' : 'DAY')) }));
-export const TEMPLATES: Record<4 | 5, { name: string; weeks: string[] }[]> = {
-  4: T(['주야주야', '야주야주', '주주야야', '야야주주', '야주주주', '주야주주', '주주야주', '주주주야']),
-  5: T(['주야주야주', '야주야주야', '야주주주주', '주야주주주', '주주야주주', '주주주야주', '주주주주야', '주주주주주']),
+/** 4주 템플릿: 주간(주)·야간(야) 주 순서 16가지 전부. 이름 글자 = 1주차부터. */
+export const TEMPLATES: { name: string; weeks: string[] }[] = Array.from({ length: 16 }, (_, n) => {
+  const weeks = [3, 2, 1, 0].map((b) => ((n >> b) & 1 ? 'NIGHT' : 'DAY'));
+  return { name: weeks.map((w) => (w === 'NIGHT' ? '야' : '주')).join(''), weeks };
+});
+/** 템플릿 → 패턴. 5주 근무조면 5주차는 기본 주간(인사팀이 고쳐 쓴다). */
+export const applyTemplate = (weeks: string[], days: number) => {
+  const n = days / 7;
+  return fromWeeks([...weeks, ...Array<string>(Math.max(0, n - weeks.length)).fill('DAY')].slice(0, n));
+};
+/** 검색어('주야주주', '1주 야 2주 주', '야 주')에서 주·야 순서만 뽑아 앞부분이 같은 템플릿. */
+export const searchTemplates = (q: string) => {
+  const key = [...q.replace(/\d\s*주(차)?/g, '')].filter((c) => c === '주' || c === '야').join('');
+  return TEMPLATES.filter((t) => t.name.startsWith(key));
 };
 
 /** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 패턴 길이 주기로. */

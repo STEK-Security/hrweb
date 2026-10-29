@@ -3,7 +3,7 @@
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';
-import { addDays, ampm, buildCells, codeAt, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, TEMPLATES, weekBlock, weeksOf } from '../../src/features/attendance/pattern';
+import { addDays, ampm, buildCells, codeAt, applyTemplate, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, searchTemplates, TEMPLATES, weekBlock, weeksOf } from '../../src/features/attendance/pattern';
 
 const A = [
   ...Array(5).fill('DAY'), 'REST', 'REST', ...Array(5).fill('DAY'), 'REST', 'REST',
@@ -100,8 +100,8 @@ assert.equal(cycle('DAY_STD'), 'DAY');
   assert.equal(codeAt(B5, anchor, addDays(anchor, -1)), 'DAY'); // 앞 주기 5주차 일
   const r = buildCells(B5, anchor, addDays(anchor, 28), addDays(anchor, 34), ['1001'], [], { ...base, group: 'Q' });
   assert.equal(r.rows.length, 7);
-  // 주 수 바꾸기: 4→5주는 4주차를 복사, 5→4주는 5주차를 버린다
-  assert.deepEqual(resizeWeeks(A, 5), [...A, ...A.slice(21, 28)]);
+  // 주 수 바꾸기: 4→5주는 주간 주를 붙이고, 5→4주는 5주차를 버린다
+  assert.deepEqual(resizeWeeks(A, 5), [...A, 'DAY', 'DAY', 'DAY', 'DAY', 'DAY', 'REST', 'REST']);
   assert.deepEqual(resizeWeeks(B5, 4), A);
   assert.deepEqual(resizeWeeks(A, 4), A);
   assert.equal(newPattern(4).length, 28);
@@ -116,15 +116,20 @@ assert.equal(cycle('DAY_STD'), 'DAY');
   assert.deepEqual(fromWeeks(['DAY', 'DAY', 'NIGHT', 'NIGHT']), A);
   assert.deepEqual(weeksOf(A), ['DAY', 'DAY', 'NIGHT', 'NIGHT']);
   assert.deepEqual(weeksOf(['NIGHT', ...A.slice(1)]), [null, 'DAY', 'NIGHT', 'NIGHT'], '주 안이 섞이면 null');
-  for (const w of [4, 5] as const) {
-    assert.equal(TEMPLATES[w].length, 8);
-    assert.equal(new Set(TEMPLATES[w].map((t) => t.name)).size, 8, '이름 중복 없음');
-    for (const t of TEMPLATES[w]) assert.equal(fromWeeks(t.weeks).length, w * 7);
-  }
-  assert.deepEqual(TEMPLATES[4].find((t) => t.name === '야주주주')!.weeks, ['NIGHT', 'DAY', 'DAY', 'DAY']);
+  assert.equal(TEMPLATES.length, 16);
+  assert.equal(new Set(TEMPLATES.map((t) => t.name)).size, 16, '이름 중복 없음');
+  assert.deepEqual(TEMPLATES.find((t) => t.name === '야주주주')!.weeks, ['NIGHT', 'DAY', 'DAY', 'DAY']);
+  // 5주 근무조에 4주 템플릿 → 5주차는 주간
+  assert.deepEqual(weeksOf(applyTemplate(['NIGHT', 'DAY', 'NIGHT', 'DAY'], 35)), ['NIGHT', 'DAY', 'NIGHT', 'DAY', 'DAY']);
+  assert.equal(applyTemplate(['NIGHT', 'DAY', 'NIGHT', 'DAY'], 28).length, 28);
+  // 검색: 글자 순서, '1주 야' 형식, 앞부분 일치
+  assert.deepEqual(searchTemplates('주야주주').map((t) => t.name), ['주야주주']);
+  assert.deepEqual(searchTemplates('1주 야 2주 주 3주 주 4주 주').map((t) => t.name), ['야주주주']);
+  assert.equal(searchTemplates('야야').length, 4);
+  assert.equal(searchTemplates('').length, 16);
 }
 
 // 패턴 길이 검사
 assert.throws(() => buildCells(Array(29).fill('DAY'), anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
 
-console.log('PASS attendancePattern (64 checks)');
+console.log('PASS attendancePattern (69 checks)');

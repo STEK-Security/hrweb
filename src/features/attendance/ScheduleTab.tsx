@@ -9,7 +9,7 @@ import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODES, CODE_LABELS, TEMPLATES, WEEK_OPTIONS, addDays, ampm, buildCells, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, weekBlock, weeksOf, type PatternRow } from './pattern';
+import { CODES, CODE_LABELS, WEEK_OPTIONS, addDays, ampm, applyTemplate, buildCells, cycle, mondayOf, newPattern, resizeWeeks, searchTemplates, weekBlock, weeksOf, type PatternRow } from './pattern';
 
 interface PatternDb {
   group_name: string;
@@ -80,6 +80,7 @@ export function ScheduleTab() {
   const [draft, setDraft] = useState<{ pattern: string[]; anchor: string } | null>(null);
   const [newName, setNewName] = useState('');
   const [newWeeks, setNewWeeks] = useState<number>(4);
+  const [tplQ, setTplQ] = useState('');
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(() => addDays(`${shiftYm(today.slice(0, 7), 2)}-01`, -1));
   const [holidayAsRest, setHolidayAsRest] = useState(true);
@@ -349,22 +350,6 @@ export function ScheduleTab() {
                     </button>
                   ))}
                 </div>
-                <select
-                  value={TEMPLATES[(draft.pattern.length / 7) as 4 | 5].find((t) => fromWeeks(t.weeks).every((c, i) => c === draft.pattern[i]))?.name ?? ''}
-                  onChange={(e) => {
-                    const t = TEMPLATES[(draft.pattern.length / 7) as 4 | 5].find((x) => x.name === e.target.value);
-                    if (t) setDraft({ ...draft, pattern: fromWeeks(t.weeks) });
-                  }}
-                  aria-label="템플릿"
-                  className={inputCls}
-                >
-                  <option value="" disabled>템플릿 선택 (직접 구성)</option>
-                  {TEMPLATES[(draft.pattern.length / 7) as 4 | 5].map((t) => (
-                    <option key={t.name} value={t.name}>
-                      {[...t.name].map((c, i) => `${i + 1}주 ${c}`).join(' · ')}
-                    </option>
-                  ))}
-                </select>
                 <label className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                   1주차 월요일
                   <input type="date" value={draft.anchor} onChange={(e) => e.target.value && setDraft({ ...draft, anchor: mondayOf(e.target.value) })} className={inputCls} />
@@ -380,6 +365,40 @@ export function ScheduleTab() {
                 </button>
                 {dirty && <span className="text-[11px] font-bold text-amber-700">저장 안 됨</span>}
               </div>
+              {/* 4주 템플릿: 검색('주야주주', '1주 야 2주 주')하거나 제목을 눌러 적용. 5주 근무조면 5주차는 주간. */}
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-700">템플릿</span>
+                  <input
+                    value={tplQ}
+                    onChange={(e) => setTplQ(e.target.value)}
+                    placeholder="주야주주 처럼 입력"
+                    aria-label="템플릿 검색"
+                    className={`${inputCls} w-40`}
+                  />
+                  <span className="text-[11px] text-slate-500">
+                    1~4주차 주간(주)·야간(야) 순서{draft.pattern.length > 28 ? ' · 5주차는 주간으로 채워지니 필요하면 고치세요' : ''}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {searchTemplates(tplQ).map((t) => {
+                    const next = applyTemplate(t.weeks, draft.pattern.length);
+                    const on = next.every((c, i) => c === draft.pattern[i]);
+                    return (
+                      <button
+                        key={t.name}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setDraft({ ...draft, pattern: next })}
+                        className={`px-2.5 py-1 rounded-md border text-xs font-bold tracking-widest cursor-pointer ${on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50'}`}
+                      >
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                  {!searchTemplates(tplQ).length && <span className="text-[11px] text-slate-500">맞는 템플릿이 없습니다. 주·야 글자로 입력하세요.</span>}
+                </div>
+              </div>
               {draft.anchor !== current.anchor_date && (
                 <p className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-700">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
@@ -387,7 +406,7 @@ export function ScheduleTab() {
                 </p>
               )}
               <p className="text-[11px] text-slate-500">
-                템플릿이나 주차 옆 선택으로 한 주(월~금 근무, 토·일 휴일)를 한 번에 정하고, 칸을 누르면 하루씩 주간 → 야간 → 휴일 → 통상주간 순으로 바뀝니다. 4주/5주·템플릿·칸 변경은 <b>저장</b>해야 반영되고(5주→4주로 줄이면 5주차는 지워지고, 다시 늘리면 4주차가 복사됩니다), 근무표에는 아래 "근무표에 적용"으로 넣습니다.
+                템플릿이나 주차 옆 선택으로 한 주(월~금 근무, 토·일 휴일)를 한 번에 정하고, 칸을 누르면 하루씩 주간 → 야간 → 휴일 → 통상주간 순으로 바뀝니다. 4주/5주·템플릿·칸 변경은 <b>저장</b>해야 반영되고(5주→4주로 줄이면 5주차는 지워지고, 4주→5주로 늘리면 5주차는 주간으로 채워집니다), 근무표에는 아래 "근무표에 적용"으로 넣습니다.
               </p>
               <div className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] gap-1.5 items-center">
                 <span />
