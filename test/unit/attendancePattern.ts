@@ -1,5 +1,5 @@
 /**
- * 근무조 28일 패턴 → 근무표 행 (Review Focus 3: 마감 달·지난 날·직접 수정한 칸은 덮어쓰지 않음)
+ * 근무조 4·5주 패턴 → 근무표 행 (Review Focus 3: 마감 달·지난 날·직접 수정한 칸은 덮어쓰지 않음)
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';

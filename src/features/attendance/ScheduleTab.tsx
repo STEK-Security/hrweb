@@ -110,8 +110,9 @@ export function ScheduleTab() {
   useEffect(() => {
     // 1일차는 월요일 — 예전에 다른 요일로 저장된 기준일은 그 주 월요일로 맞춰 보여 준다(저장해야 반영).
     setDraft(current && { pattern: [...current.pattern], anchor: mondayOf(current.anchor_date) });
-    setPreview(null);
   }, [current]);
+  // 패턴을 고치면(칸·주 수) 이전 미리보기로 적용되지 않게 버린다.
+  useEffect(() => setPreview(null), [draft]);
   useEffect(() => {
     if (!selected && patterns.length) setSelected(patterns[0].group_name);
   }, [patterns, selected]);
@@ -440,7 +441,11 @@ export function ScheduleTab() {
                   전체 근무조 미리보기
                 </button>
               </div>
-              {dirty && <p className="text-[11px] font-semibold text-amber-700">패턴을 먼저 저장하세요.</p>}
+              {dirty && (
+                <p className="text-[11px] font-semibold text-amber-700">
+                  패턴을 먼저 저장하세요.{draft.pattern.length !== current.pattern.length && ' 주 수를 바꾸면 순환이 달라지므로 저장 후 근무표에 다시 적용해야 합니다.'}
+                </p>
+              )}
               <p className="text-[11px] text-slate-500">마감 달·개별 수정한 날은 덮어쓰지 않습니다. 지난 날은 '지난 날도 채우기'를 켤 때만 채우며, 저장하면 그날 판정을 다시 계산합니다.</p>
 
               {preview && (
