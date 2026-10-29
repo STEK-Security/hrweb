@@ -3,7 +3,7 @@
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';
-import { addDays, ampm, buildCells, codeAt, applyTemplate, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, searchTemplates, TEMPLATES, weekBlock, weeksOf } from '../../src/features/attendance/pattern';
+import { addDays, ampm, buildCells, codeAt, applyTemplate, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, searchTemplates, TEMPLATES, weekBlock, weeksCode, weeksOf } from '../../src/features/attendance/pattern';
 
 const A = [
   ...Array(5).fill('DAY'), 'REST', 'REST', ...Array(5).fill('DAY'), 'REST', 'REST',
@@ -127,9 +127,15 @@ assert.equal(cycle('DAY_STD'), 'DAY');
   assert.deepEqual(searchTemplates('1주 야 2주 주 3주 주 4주 주').map((t) => t.name), ['야주주주']);
   assert.equal(searchTemplates('야야').length, 4);
   assert.equal(searchTemplates('').length, 16);
+  // 인사팀이 만든 템플릿: 통상주간·휴일 주도 쓰고, 이름으로도 찾는다
+  const mine = [{ name: '품질C조용', weeks: ['DAY_STD', 'NIGHT', 'REST', 'DAY'], custom: true }, ...TEMPLATES];
+  assert.equal(weeksCode(mine[0].weeks), '통야휴주');
+  assert.deepEqual(searchTemplates('통야', mine).map((t) => t.name), ['품질C조용']);
+  assert.deepEqual(searchTemplates('품질', mine).map((t) => t.name), ['품질C조용']);
+  assert.deepEqual(weeksOf(applyTemplate(mine[0].weeks, 35)), ['DAY_STD', 'NIGHT', 'REST', 'DAY', 'DAY']);
 }
 
 // 패턴 길이 검사
 assert.throws(() => buildCells(Array(29).fill('DAY'), anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
 
-console.log('PASS attendancePattern (69 checks)');
+console.log('PASS attendancePattern (74 checks)');

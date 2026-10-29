@@ -46,20 +46,28 @@ export const weeksOf = (pattern: string[]) =>
     return weekBlock(w[0]).every((c, k) => c === w[k]) ? w[0] : null;
   });
 
-/** 4주 템플릿: 주간(주)·야간(야) 주 순서 16가지 전부. 이름 글자 = 1주차부터. */
-export const TEMPLATES: { name: string; weeks: string[] }[] = Array.from({ length: 16 }, (_, n) => {
+/** 템플릿 주 코드 ↔ 한 글자(주간 주·야간 야·통상주간 통·휴일 휴). */
+export const WEEK_CODES = ['DAY', 'NIGHT', 'DAY_STD', 'REST'] as const;
+const WEEK_CHAR: Record<string, string> = { DAY: '주', NIGHT: '야', DAY_STD: '통', REST: '휴' };
+/** 주 코드 순서 → '주야통휴' */
+export const weeksCode = (weeks: string[]) => weeks.map((w) => WEEK_CHAR[w] ?? '?').join('');
+
+export interface Template { name: string; weeks: string[]; custom?: boolean }
+/** 기본 4주 템플릿: 주간·야간 주 순서 16가지 전부. 인사팀이 만든 것은 attendance_shift_templates(0038). */
+export const TEMPLATES: Template[] = Array.from({ length: 16 }, (_, n) => {
   const weeks = [3, 2, 1, 0].map((b) => ((n >> b) & 1 ? 'NIGHT' : 'DAY'));
-  return { name: weeks.map((w) => (w === 'NIGHT' ? '야' : '주')).join(''), weeks };
+  return { name: weeksCode(weeks), weeks };
 });
 /** 템플릿 → 패턴. 5주 근무조면 5주차는 기본 주간(인사팀이 고쳐 쓴다). */
 export const applyTemplate = (weeks: string[], days: number) => {
   const n = days / 7;
   return fromWeeks([...weeks, ...Array<string>(Math.max(0, n - weeks.length)).fill('DAY')].slice(0, n));
 };
-/** 검색어('주야주주', '1주 야 2주 주', '야 주')에서 주·야 순서만 뽑아 앞부분이 같은 템플릿. */
-export const searchTemplates = (q: string) => {
-  const key = [...q.replace(/\d\s*주(차)?/g, '')].filter((c) => c === '주' || c === '야').join('');
-  return TEMPLATES.filter((t) => t.name.startsWith(key));
+/** 검색: '주야주주'·'1주 야 2주 주'는 주 순서 앞부분으로, 그 밖의 글자는 이름에 포함되는지로 찾는다. */
+export const searchTemplates = (q: string, list: Template[] = TEMPLATES) => {
+  const t = q.trim();
+  const key = [...t.replace(/\d\s*주(차)?/g, '')].filter((c) => '주야통휴'.includes(c)).join('');
+  return list.filter((x) => !t || (key && weeksCode(x.weeks).startsWith(key)) || (x.custom && x.name.includes(t)));
 };
 
 /** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 패턴 길이 주기로. */

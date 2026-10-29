@@ -4,12 +4,12 @@
  * 오늘 이전·마감 달·직접 수정한 칸은 덮어쓰지 않는다(pattern.ts).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Pencil, Plus, Save, Trash2, Users } from 'lucide-react';
+import { AlertTriangle, Loader2, Pencil, Plus, Save, Trash2, Users, X } from 'lucide-react';
 import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODES, CODE_LABELS, WEEK_OPTIONS, addDays, ampm, applyTemplate, buildCells, cycle, mondayOf, newPattern, resizeWeeks, searchTemplates, weekBlock, weeksOf, type PatternRow } from './pattern';
+import { CODES, CODE_LABELS, WEEK_OPTIONS, addDays, ampm, applyTemplate, buildCells, cycle, mondayOf, newPattern, resizeWeeks, searchTemplates, TEMPLATES, WEEK_CODES, weekBlock, weeksCode, weeksOf, type PatternRow, type Template } from './pattern';
 
 interface PatternDb {
   group_name: string;
@@ -43,6 +43,7 @@ interface Preview {
 }
 
 const TABLE = 'attendance_shift_patterns';
+const TPL_TABLE = 'attendance_shift_templates';
 const CHUNK = 500; // Worker PUT /schedules 상한
 const MAX_DAYS = 92;
 const WD = ['월', '화', '수', '목', '금', '토', '일']; // 패턴 1일차 = 월요일
@@ -81,6 +82,8 @@ export function ScheduleTab() {
   const [newName, setNewName] = useState('');
   const [newWeeks, setNewWeeks] = useState<number>(4);
   const [tplQ, setTplQ] = useState('');
+  const [customTpls, setCustomTpls] = useState<Template[]>([]);
+  const [tplNew, setTplNew] = useState<{ open: boolean; name: string; weeks: string[] }>({ open: false, name: '', weeks: ['DAY', 'NIGHT', 'DAY', 'NIGHT'] });
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(() => addDays(`${shiftYm(today.slice(0, 7), 2)}-01`, -1));
   const [holidayAsRest, setHolidayAsRest] = useState(true);
@@ -98,7 +101,37 @@ export function ScheduleTab() {
     setPatterns(data as PatternDb[]);
   }, []);
 
+  const loadTemplates = useCallback(async () => {
+    const { data, error: e } = await supabase!.from(TPL_TABLE).select('name, weeks').order('created_at');
+    if (e) return setError(`템플릿을 불러오지 못했습니다: ${e.message}`);
+    setCustomTpls((data as { name: string; weeks: string[] }[]).map((t) => ({ ...t, custom: true })));
+  }, []);
+  const allTemplates = useMemo(() => [...customTpls, ...TEMPLATES], [customTpls]);
+
+  const createTemplate = () =>
+    run(async () => {
+      const name = tplNew.name.trim() || weeksCode(tplNew.weeks);
+      if (name.length > 20) throw new Error('템플릿 이름은 20자 이하로 입력하세요.');
+      if (allTemplates.some((t) => t.name === name)) throw new Error(`'${name}' 템플릿이 이미 있습니다.`);
+      const { error: e } = await supabase!.from(TPL_TABLE).insert({ name, weeks: tplNew.weeks });
+      if (e) throw new Error(e.message);
+      await logEvent('attendance.pattern', { meta: { op: 'template_create', name, weeks: tplNew.weeks } });
+      setTplNew({ ...tplNew, open: false, name: '' });
+      await loadTemplates();
+      setMsg(`'${name}' 템플릿을 만들었습니다.`);
+    });
+
+  const deleteTemplate = (name: string) =>
+    run(async () => {
+      if (!window.confirm(`'${name}' 템플릿을 삭제하시겠습니까? 이미 적용한 근무조 패턴은 그대로입니다.`)) return;
+      const { error: e } = await supabase!.from(TPL_TABLE).delete().eq('name', name);
+      if (e) throw new Error(e.message);
+      await logEvent('attendance.pattern', { meta: { op: 'template_delete', name } });
+      await loadTemplates();
+    });
+
   useEffect(() => {
+    if (supabase) loadTemplates();
     loadPatterns();
     att<Emp[]>('GET', '/api/admin/employees')
       .then(setEmps)
@@ -372,7 +405,7 @@ export function ScheduleTab() {
                   <input
                     value={tplQ}
                     onChange={(e) => setTplQ(e.target.value)}
-                    placeholder="주야주주 처럼 입력"
+                    placeholder="주야주주·이름으로 검색"
                     aria-label="템플릿 검색"
                     className={`${inputCls} w-40`}
                   />
@@ -381,23 +414,75 @@ export function ScheduleTab() {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {searchTemplates(tplQ).map((t) => {
+                  {searchTemplates(tplQ, allTemplates).map((t) => {
                     const next = applyTemplate(t.weeks, draft.pattern.length);
                     const on = next.every((c, i) => c === draft.pattern[i]);
+                    const code = weeksCode(t.weeks);
                     return (
-                      <button
-                        key={t.name}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => setDraft({ ...draft, pattern: next })}
-                        className={`px-2.5 py-1 rounded-md border text-xs font-bold tracking-widest cursor-pointer ${on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50'}`}
-                      >
-                        {t.name}
-                      </button>
+                      <span key={t.name} className="inline-flex">
+                        <button
+                          type="button"
+                          aria-pressed={on}
+                          title={code}
+                          onClick={() => setDraft({ ...draft, pattern: next })}
+                          className={`px-2.5 py-1 border text-xs font-bold cursor-pointer ${t.custom ? 'rounded-l-md' : 'rounded-md tracking-widest'} ${on ? 'bg-blue-600 border-blue-600 text-white' : t.custom ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100' : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50'}`}
+                        >
+                          {t.name}
+                          {t.custom && t.name !== code && <span className="ml-1 font-normal tracking-widest opacity-70">{code}</span>}
+                        </button>
+                        {t.custom && (
+                          <button
+                            type="button"
+                            onClick={() => deleteTemplate(t.name)}
+                            disabled={busy}
+                            aria-label={`${t.name} 템플릿 삭제`}
+                            className="px-1.5 rounded-r-md border border-l-0 border-emerald-200 bg-white text-slate-400 hover:text-rose-600 cursor-pointer disabled:opacity-50"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
                     );
                   })}
-                  {!searchTemplates(tplQ).length && <span className="text-[11px] text-slate-500">맞는 템플릿이 없습니다. 주·야 글자로 입력하세요.</span>}
+                  {!searchTemplates(tplQ, allTemplates).length && <span className="text-[11px] text-slate-500">맞는 템플릿이 없습니다. 주·야·통·휴 글자나 템플릿 이름으로 찾으세요.</span>}
+                  <button
+                    type="button"
+                    onClick={() => setTplNew({ ...tplNew, open: !tplNew.open })}
+                    aria-expanded={tplNew.open}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:bg-white cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    템플릿 만들기
+                  </button>
                 </div>
+                {tplNew.open && (
+                  <div className="flex items-end gap-2 flex-wrap pt-2 border-t border-slate-200">
+                    {tplNew.weeks.map((w, i) => (
+                      <label key={i} className="text-[11px] font-semibold text-slate-600">
+                        {i + 1}주차
+                        <select
+                          value={w}
+                          onChange={(e) => setTplNew({ ...tplNew, weeks: tplNew.weeks.map((x, j) => (j === i ? e.target.value : x)) })}
+                          className={`${inputCls} block mt-0.5`}
+                        >
+                          {WEEK_CODES.map((c) => (
+                            <option key={c} value={c}>
+                              {c === 'REST' ? '휴일' : shiftTypes.find((t) => t.code === c)?.name ?? CODE_LABELS[c]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                    <label className="text-[11px] font-semibold text-slate-600">
+                      이름 (비우면 {weeksCode(tplNew.weeks)})
+                      <input value={tplNew.name} onChange={(e) => setTplNew({ ...tplNew, name: e.target.value })} maxLength={20} placeholder={weeksCode(tplNew.weeks)} className={`${inputCls} block mt-0.5 w-36`} />
+                    </label>
+                    <button type="button" onClick={createTemplate} disabled={busy} className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">
+                      저장
+                    </button>
+                    <span className="text-[11px] text-slate-500">한 주 = 월~금 그 근무 + 토·일 휴일</span>
+                  </div>
+                )}
               </div>
               {draft.anchor !== current.anchor_date && (
                 <p className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-700">
