@@ -1,5 +1,5 @@
 /**
- * 근태관리 '근무표' 탭 — 근무조 28일 패턴(Supabase attendance_shift_patterns)을 편집하고
+ * 근태관리 '근무표' 탭 — 근무조 4주·5주 패턴(Supabase attendance_shift_patterns)을 편집하고
  * 기간을 정해 Worker `PUT /api/admin/schedules` 로 500행씩 적용한다. 스펙 11.7.
  * 오늘 이전·마감 달·직접 수정한 칸은 덮어쓰지 않는다(pattern.ts).
  */
@@ -9,7 +9,7 @@ import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODES, CODE_LABELS, addDays, ampm, buildCells, cycle, mondayOf, type PatternRow } from './pattern';
+import { CODES, CODE_LABELS, WEEK_OPTIONS, addDays, ampm, buildCells, cycle, mondayOf, newPattern, resizeWeeks, type PatternRow } from './pattern';
 
 interface PatternDb {
   group_name: string;
@@ -79,6 +79,7 @@ export function ScheduleTab() {
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ pattern: string[]; anchor: string } | null>(null);
   const [newName, setNewName] = useState('');
+  const [newWeeks, setNewWeeks] = useState<number>(4);
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(() => addDays(`${shiftYm(today.slice(0, 7), 2)}-01`, -1));
   const [holidayAsRest, setHolidayAsRest] = useState(true);
@@ -123,7 +124,7 @@ export function ScheduleTab() {
   }, [emps]); // today 는 화면을 연 동안 같다고 본다
   const unassigned = (emps ?? []).filter((e) => !e.shift_group && e.attendance_target === 1 && active(e)).length;
 
-  const dirty = !!current && !!draft && (draft.anchor !== current.anchor_date || draft.pattern.some((c, i) => c !== current.pattern[i]));
+  const dirty = !!current && !!draft && (draft.anchor !== current.anchor_date || draft.pattern.length !== current.pattern.length || draft.pattern.some((c, i) => c !== current.pattern[i]));
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -144,9 +145,9 @@ export function ScheduleTab() {
       // Worker shift_group 상한 20자
       if (!name || name.length > 20) throw new Error('근무조 이름을 1~20자로 입력하세요.');
       if (patterns.some((p) => p.group_name === name)) throw new Error('이미 있는 근무조입니다.');
-      const { error: e } = await supabase!.from(TABLE).insert({ group_name: name, anchor_date: draft?.anchor ?? '2026-11-02', pattern: Array(28).fill('REST') });
+      const { error: e } = await supabase!.from(TABLE).insert({ group_name: name, anchor_date: draft?.anchor ?? '2026-11-02', pattern: newPattern(newWeeks) });
       if (e) throw new Error(e.message);
-      await logEvent('attendance.pattern', { meta: { group: name, op: 'create' } });
+      await logEvent('attendance.pattern', { meta: { group: name, op: 'create', weeks: newWeeks } });
       setNewName('');
       await loadPatterns();
       setSelected(name);
@@ -199,7 +200,7 @@ export function ScheduleTab() {
       if (!current || !draft) return;
       const { error: e } = await supabase!.from(TABLE).update({ anchor_date: draft.anchor, pattern: draft.pattern }).eq('group_name', current.group_name);
       if (e) throw new Error(e.message);
-      await logEvent('attendance.pattern', { meta: { group: current.group_name, anchor: draft.anchor } });
+      await logEvent('attendance.pattern', { meta: { group: current.group_name, anchor: draft.anchor, weeks: draft.pattern.length / 7 } });
       await loadPatterns();
       setMsg('패턴을 저장했습니다.');
     });
@@ -277,8 +278,9 @@ export function ScheduleTab() {
                   selected === p.group_name ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {p.group_name}
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                <span className="truncate">{p.group_name}</span>
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 shrink-0">
+                  <span className="px-1 rounded bg-slate-100 font-semibold">{p.pattern.length / 7}주</span>
                   <Users className="w-3 h-3" />
                   {emps ? (counts.get(p.group_name) ?? 0) : '-'}
                 </span>
@@ -300,6 +302,9 @@ export function ScheduleTab() {
         </ul>
         <div className="flex gap-1 pt-1 border-t border-slate-100">
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="새 근무조" aria-label="새 근무조 이름" className={`${inputCls} flex-1 min-w-0`} />
+          <select value={newWeeks} onChange={(e) => setNewWeeks(+e.target.value)} aria-label="새 근무조 패턴 주 수" className={inputCls}>
+            {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w}주</option>)}
+          </select>
           <button type="button" onClick={addGroup} disabled={busy} aria-label="근무조 추가" className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 text-slate-600 disabled:opacity-50 cursor-pointer">
             <Plus className="w-4 h-4" />
           </button>
@@ -326,10 +331,18 @@ export function ScheduleTab() {
 
         {current && draft && (
           <>
-            {/* 28일 패턴 */}
+            {/* 4·5주 패턴 */}
             <div className={`${card} p-4 space-y-3`}>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-sm font-bold text-slate-900">{current.group_name} 28일 패턴</h2>
+                <h2 className="text-sm font-bold text-slate-900">{current.group_name} 패턴</h2>
+                <select
+                  value={draft.pattern.length / 7}
+                  onChange={(e) => setDraft({ ...draft, pattern: resizeWeeks(draft.pattern, +e.target.value) })}
+                  aria-label="패턴 주 수"
+                  className={inputCls}
+                >
+                  {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w}주 ({w * 7}일) 반복</option>)}
+                </select>
                 <label className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                   1주차 월요일
                   <input type="date" value={draft.anchor} onChange={(e) => e.target.value && setDraft({ ...draft, anchor: mondayOf(e.target.value) })} className={inputCls} />
@@ -358,7 +371,7 @@ export function ScheduleTab() {
                     {w}
                   </span>
                 ))}
-                {[0, 1, 2, 3].map((wk) => [
+                {Array.from({ length: draft.pattern.length / 7 }, (_, wk) => wk).map((wk) => [
                   <span key={`w${wk}`} className="text-[11px] font-semibold text-slate-500 pr-1 whitespace-nowrap">
                     {wk + 1}주차
                     <span className="block text-[10px] font-normal">{addDays(draft.anchor, wk * 7).slice(5).replace('-', '/')}~</span>

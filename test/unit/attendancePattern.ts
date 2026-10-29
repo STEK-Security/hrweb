@@ -3,7 +3,7 @@
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';
-import { ampm, buildCells, codeAt, cycle, mondayOf } from '../../src/features/attendance/pattern';
+import { addDays, ampm, buildCells, codeAt, cycle, mondayOf, newPattern, resizeWeeks } from '../../src/features/attendance/pattern';
 
 const A = [
   ...Array(5).fill('DAY'), 'REST', 'REST', ...Array(5).fill('DAY'), 'REST', 'REST',
@@ -91,7 +91,25 @@ assert.equal(ampm(null), '');
 // 통상주간도 순환에 들어간다
 assert.equal(cycle('DAY_STD'), 'DAY');
 
-// 패턴 길이 검사
-assert.throws(() => buildCells(['DAY'], anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
+// 5주(35일) 패턴: 35일 주기로 돈다
+{
+  const B5 = [...A, ...Array(7).fill('DAY')]; // 5주차 = 주간
+  assert.equal(codeAt(B5, anchor, addDays(anchor, 28)), 'DAY');
+  assert.equal(codeAt(B5, anchor, addDays(anchor, 35)), 'DAY'); // 다시 1주차 월
+  assert.equal(codeAt(B5, anchor, addDays(anchor, 35 + 14)), 'NIGHT'); // 3주차 월
+  assert.equal(codeAt(B5, anchor, addDays(anchor, -1)), 'DAY'); // 앞 주기 5주차 일
+  const r = buildCells(B5, anchor, addDays(anchor, 28), addDays(anchor, 34), ['1001'], [], { ...base, group: 'Q' });
+  assert.equal(r.rows.length, 7);
+  // 주 수 바꾸기: 4→5주는 4주차를 복사, 5→4주는 5주차를 버린다
+  assert.deepEqual(resizeWeeks(A, 5), [...A, ...A.slice(21, 28)]);
+  assert.deepEqual(resizeWeeks(B5, 4), A);
+  assert.deepEqual(resizeWeeks(A, 4), A);
+  assert.equal(newPattern(4).length, 28);
+  assert.equal(newPattern(5).length, 35);
+  assert.equal(newPattern(5)[34], 'REST');
+}
 
-console.log('PASS attendancePattern (38 checks)');
+// 패턴 길이 검사
+assert.throws(() => buildCells(Array(29).fill('DAY'), anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
+
+console.log('PASS attendancePattern (49 checks)');

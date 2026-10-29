@@ -1,5 +1,5 @@
 /**
- * 근무조 28일 패턴 → Worker `PUT /api/admin/schedules` 행(순수 함수). 스펙 11.1·11.7.
+ * 근무조 4주(28일)·5주(35일) 패턴 → Worker `PUT /api/admin/schedules` 행(순수 함수). 스펙 11.1·11.7.
  * 덮어쓰지 않는 칸: 오늘 이전, 마감(open 아닌) 달, 직접 수정한 칸(note 가 `pattern:` 로 시작하지 않는 기존 행).
  */
 
@@ -22,9 +22,23 @@ export const ampm = (hm: string | null) => {
   return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${hm.slice(3, 5)}`;
 };
 
-/** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 28일 주기로. */
+/** 패턴 주 수. DB 제약(0037)과 같게 4주·5주만. */
+export const WEEK_OPTIONS = [4, 5] as const;
+export const isPatternLength = (n: number) => WEEK_OPTIONS.some((w) => w * 7 === n);
+
+/** 새 근무조 패턴: 전부 휴일. */
+export const newPattern = (weeks: number) => Array<string>(weeks * 7).fill('REST');
+
+/** 주 수 바꾸기: 늘리면 마지막 주를 복사해 붙이고, 줄이면 뒤 주를 버린다. */
+export const resizeWeeks = (pattern: string[], weeks: number) => {
+  const out = pattern.slice(0, weeks * 7);
+  while (out.length < weeks * 7) out.push(...pattern.slice(-7));
+  return out;
+};
+
+/** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 패턴 길이 주기로. */
 export const codeAt = (pattern: string[], anchor: string, d: string) =>
-  pattern[(((dayNo(d) - dayNo(anchor)) % 28) + 28) % 28];
+  pattern[(((dayNo(d) - dayNo(anchor)) % pattern.length) + pattern.length) % pattern.length];
 
 export interface ExistingRow {
   sabun: string;
@@ -58,7 +72,7 @@ export function buildCells(
   existing: ExistingRow[],
   opts: BuildOpts,
 ) {
-  if (pattern.length !== 28) throw new Error('패턴은 28일이어야 합니다');
+  if (!isPatternLength(pattern.length)) throw new Error('패턴은 4주(28일) 또는 5주(35일)여야 합니다');
   const ex = new Map(existing.map((r) => [`${r.sabun}|${r.work_date}`, r]));
   const rows: PatternRow[] = [];
   const skipped = { past: 0, closed: 0, manual: 0, same: 0 };
