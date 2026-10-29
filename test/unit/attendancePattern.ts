@@ -47,6 +47,11 @@ const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11
   const r = buildCells(A, anchor, '2026-11-01', '2026-11-02', ['1001'], [], { ...base, group: 'A조' });
   assert.deepEqual(r.rows.map((x) => x.work_date), ['2026-11-02']);
   assert.equal(r.skipped.past, 1);
+  // 지난 날 포함: 도입 첫 달처럼 열린 달의 지난 날을 채운다(마감 달은 계속 제외)
+  const p = buildCells(A, anchor, '2026-10-31', '2026-11-02', ['1001'], [], { ...base, includePast: true, closedYms: new Set(['2026-10']), group: 'A조' });
+  assert.deepEqual(p.rows.map((x) => x.work_date), ['2026-11-01', '2026-11-02']);
+  assert.equal(p.skipped.past, 0);
+  assert.equal(p.skipped.closed, 1);
 }
 
 // 마감 달 제외
@@ -73,4 +78,4 @@ const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11
 // 패턴 길이 검사
 assert.throws(() => buildCells(['DAY'], anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
 
-console.log('PASS attendancePattern (24 checks)');
+console.log('PASS attendancePattern (27 checks)');

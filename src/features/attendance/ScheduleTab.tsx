@@ -4,7 +4,7 @@
  * 오늘 이전·마감 달·직접 수정한 칸은 덮어쓰지 않는다(pattern.ts).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Plus, Save, Users } from 'lucide-react';
+import { AlertTriangle, Loader2, Pencil, Plus, Save, Trash2, Users } from 'lucide-react';
 import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
@@ -69,6 +69,7 @@ export function ScheduleTab() {
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(() => addDays(`${shiftYm(today.slice(0, 7), 2)}-01`, -1));
   const [holidayAsRest, setHolidayAsRest] = useState(true);
+  const [includePast, setIncludePast] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -136,6 +137,43 @@ export function ScheduleTab() {
       setSelected(name);
     });
 
+  const renameGroup = (old: string) =>
+    run(async () => {
+      const name = window.prompt(`'${old}' 근무조의 새 이름`, old)?.trim();
+      if (!name || name === old) return;
+      if (name.length > 20) throw new Error('근무조 이름을 1~20자로 입력하세요.');
+      if (patterns.some((p) => p.group_name === name)) throw new Error('이미 있는 근무조입니다.');
+      const { error: e } = await supabase!.from(TABLE).update({ group_name: name }).eq('group_name', old);
+      if (e) throw new Error(e.message);
+      // 직원의 근무조(Worker employees.shift_group)도 새 이름으로 옮긴다. 퇴사자 포함.
+      const members = (emps ?? []).filter((x) => x.shift_group === old);
+      for (const [i, x] of members.entries()) {
+        try {
+          await att('PATCH', `/api/admin/employees/${x.sabun}`, { body: { shift_group: name } });
+        } catch (err) {
+          throw new Error(`이름은 바꿨지만 직원 ${i}/${members.length}명만 옮겼습니다 — 직원 설정 탭에서 나머지를 '${name}'로 지정하세요. (${errorText(err)})`);
+        }
+      }
+      await logEvent('attendance.pattern', { meta: { group: name, op: 'rename', from: old, members: members.length } });
+      setEmps((es) => es && es.map((x) => (x.shift_group === old ? { ...x, shift_group: name } : x)));
+      await loadPatterns();
+      setSelected(name);
+      setMsg(`'${old}' → '${name}' (직원 ${members.length}명 이동)`);
+    });
+
+  const deleteGroup = (name: string) =>
+    run(async () => {
+      const n = (emps ?? []).filter((x) => x.shift_group === name).length;
+      if (n) throw new Error(`'${name}'에 지정된 직원 ${n}명(퇴사자 포함)이 있습니다. 직원 설정 탭에서 다른 근무조로 옮긴 뒤 삭제하세요.`);
+      if (!window.confirm(`'${name}' 근무조를 삭제하시겠습니까? 이미 근무표에 들어간 날은 그대로 남습니다.`)) return;
+      const { error: e } = await supabase!.from(TABLE).delete().eq('group_name', name);
+      if (e) throw new Error(e.message);
+      await logEvent('attendance.pattern', { meta: { group: name, op: 'delete' } });
+      setSelected(null);
+      await loadPatterns();
+      setMsg(`'${name}' 근무조를 삭제했습니다.`);
+    });
+
   const savePattern = () =>
     run(async () => {
       if (!current || !draft) return;
@@ -173,6 +211,7 @@ export function ScheduleTab() {
         holidays,
         holidayAsRest,
         today,
+        includePast,
         closedYms: new Set(months.filter((m) => m.status !== 'open').map((m) => m.ym)),
       });
       setPreview({ ...r, people: sabuns.length });
@@ -219,6 +258,18 @@ export function ScheduleTab() {
                   {emps ? (counts.get(p.group_name) ?? 0) : '-'}
                 </span>
               </button>
+              {selected === p.group_name && (
+                <div className="flex justify-end gap-1 px-1 pt-1">
+                  <button type="button" onClick={() => renameGroup(p.group_name)} disabled={busy} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+                    <Pencil className="w-3 h-3" />
+                    이름 변경
+                  </button>
+                  <button type="button" onClick={() => deleteGroup(p.group_name)} disabled={busy} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-rose-200 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 cursor-pointer">
+                    <Trash2 className="w-3 h-3" />
+                    삭제
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -301,6 +352,10 @@ export function ScheduleTab() {
                   <input type="checkbox" checked={holidayAsRest} onChange={(e) => (setHolidayAsRest(e.target.checked), setPreview(null))} />
                   공휴일은 휴일로
                 </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={includePast} onChange={(e) => (setIncludePast(e.target.checked), setPreview(null))} />
+                  지난 날도 채우기
+                </label>
                 <button
                   type="button"
                   onClick={makePreview}
@@ -312,7 +367,7 @@ export function ScheduleTab() {
                 </button>
               </div>
               {dirty && <p className="text-[11px] font-semibold text-amber-700">패턴을 먼저 저장하세요.</p>}
-              <p className="text-[11px] text-slate-500">마감 달·지난 날·개별 수정한 날은 덮어쓰지 않습니다.</p>
+              <p className="text-[11px] text-slate-500">마감 달·개별 수정한 날은 덮어쓰지 않습니다. 지난 날은 '지난 날도 채우기'를 켤 때만 채우며, 저장하면 그날 판정을 다시 계산합니다.</p>
 
               {preview && (
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-700">

@@ -35,6 +35,8 @@ export interface BuildOpts {
   /** KST 'YYYY-MM-DD' */
   today: string;
   closedYms: Set<string>;
+  /** 지난 날도 채운다(열린 달만). 도입 첫 달 소급용. */
+  includePast?: boolean;
 }
 
 export function buildCells(
@@ -55,7 +57,7 @@ export function buildCells(
     const code = opts.holidayAsRest && opts.holidays.has(d) ? 'REST' : codeAt(pattern, anchor, d);
     for (const sabun of sabuns) {
       const old = ex.get(`${sabun}|${d}`);
-      if (d < opts.today) skipped.past++;
+      if (d < opts.today && !opts.includePast) skipped.past++;
       else if (opts.closedYms.has(d.slice(0, 7))) skipped.closed++;
       else if (old && !old.note?.startsWith('pattern:')) skipped.manual++;
       else if (old?.shift_code === code) skipped.same++;
