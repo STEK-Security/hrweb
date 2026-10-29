@@ -22,6 +22,7 @@ import { MailPage } from './features/mail/MailPage';
 import { EvaluationPage } from './features/evaluation/EvaluationPage';
 import { PayrollPlaceholderPage } from './features/payroll/PayrollPlaceholderPage';
 import { EmployeeDrawer } from './features/roster/EmployeeDrawer';
+import { StekLogo } from './components/StekLogo';
 import type { ActiveMenu } from './types';
 
 export default function App() {
@@ -42,7 +43,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans text-slate-900">
         <div className="text-center">
-          <h1 className="text-xl font-bold">STEK HR</h1>
+          <h1 className="flex justify-center"><StekLogo size={36} /></h1>
           <p className="mt-2 text-sm text-slate-500">불러오는 중...</p>
         </div>
       </div>
@@ -57,7 +58,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans text-slate-900">
         <div className="text-center">
-          <h1 className="text-xl font-bold">STEK HR</h1>
+          <h1 className="flex justify-center"><StekLogo size={36} /></h1>
           <p className="mt-2 text-sm text-red-600">권한 확인에 실패했습니다. 새로고침하거나 관리자에게 문의하세요.</p>
           <button
             type="button"

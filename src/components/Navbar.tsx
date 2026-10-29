@@ -23,6 +23,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
+import { StekLogo } from './StekLogo';
 import { PasswordChangeModal } from './PasswordChangeModal';
 
 interface NavbarProps {
@@ -179,16 +180,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-6">
             {/* Sleek Logo */}
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-xs">
-                <div className="w-3.5 h-3.5 bg-white rounded-xs"></div>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-lg tracking-tight text-blue-950">
-                  STEK HR
-                </span>
-              </div>
-            </div>
+            <StekLogo size={32} />
           </div>
 
           {/* 전역검색 */}

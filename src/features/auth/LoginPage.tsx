@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Mail, ShieldCheck, AlertCircle } from 'lucide-react';
 import { signIn } from '../../lib/auth';
+import { StekLogo } from '../../components/StekLogo';
 import { DbErrorBanner } from '../../components/DbErrorBanner';
 
 const features = [
@@ -34,13 +35,8 @@ export const LoginPage: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-[940px] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden grid md:grid-cols-2">
         {/* Brand panel */}
-        <div className="hidden md:flex flex-col justify-between bg-gradient-to-br from-blue-700 to-blue-500 text-white p-10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-xs">
-              <div className="w-3.5 h-3.5 bg-blue-600 rounded-xs"></div>
-            </div>
-            <span className="font-bold text-lg tracking-tight">STEK HR</span>
-          </div>
+        <div className="hidden md:flex flex-col justify-between bg-gradient-to-br from-[#921A1D] to-[#5e1012] text-white p-10">
+          <StekLogo size={40} invert />
 
           <div className="space-y-4">
             <h1 className="text-2xl font-bold leading-snug">
@@ -48,26 +44,23 @@ export const LoginPage: React.FC = () => {
               <br />
               인사정보 시스템
             </h1>
-            <ul className="space-y-2.5 text-sm text-blue-50">
+            <ul className="space-y-2.5 text-sm text-white/90">
               {features.map((f) => (
                 <li key={f} className="flex items-start gap-2">
-                  <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-blue-100" />
+                  <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-white/80" />
                   <span>{f}</span>
                 </li>
               ))}
             </ul>
           </div>
 
-          <p className="text-[11px] text-blue-100">© 2026 STEK & TBS. All rights reserved.</p>
+          <p className="text-[11px] text-white/75">© 2026 STEK & TBS. All rights reserved.</p>
         </div>
 
         {/* Login form */}
         <div className="p-8 sm:p-10 flex flex-col justify-center">
-          <div className="mb-6 md:hidden flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-xs">
-              <div className="w-3.5 h-3.5 bg-white rounded-xs"></div>
-            </div>
-            <span className="font-bold text-lg tracking-tight text-blue-950">STEK HR</span>
+          <div className="mb-6 md:hidden">
+            <StekLogo size={36} />
           </div>
 
           <h2 className="text-xl font-bold text-blue-950">로그인</h2>
