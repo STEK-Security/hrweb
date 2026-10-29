@@ -22,9 +22,13 @@ assert.deepEqual(cellWarnings({ shift: null, status: 'off_worked' }), [], 'flags
 assert.deepEqual(cellWarnings({ shift: 'DAY', status: 'missing' }), ['missing']);
 assert.deepEqual(cellWarnings({ shift: 'DAY', status: 'missing', flags: ['missing_out'] }), ['missing_out']);
 assert.deepEqual(cellWarnings({ shift: 'DAY', status: 'normal', flags: ['break_short'] }), ['break_short'], 'flags 가 오면 그대로');
+assert.deepEqual(cellWarnings({ shift: 'REST', status: 'off_worked', flags: ['off_day_work'] }), [], '주말 특근은 경고 아님');
+assert.deepEqual(cellWarnings({ shift: 'REST', status: 'off_worked', flags: ['off_day_work', 'missing_out'] }), ['missing_out'], '특근이라도 누락은 경고');
+assert.equal(cellLabel({ shift: 'REST', status: 'off_worked' }), '특');
+assert.equal(cellLabel({ shift: 'DAY_STD', status: 'normal' }), '통');
 
 assert.equal(hm(485), '8:05');
 assert.equal(errorText({ code: 'MONTH_CLOSED', message: 'x' }), '마감된 달은 수정할 수 없습니다.');
 assert.equal(errorText(new Error('네트워크')), '네트워크');
 
-console.log('PASS attendanceLabels (19 checks)');
+console.log('PASS attendanceLabels (23 checks)');

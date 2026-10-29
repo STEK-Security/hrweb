@@ -82,6 +82,8 @@ const LABEL_TONE: Record<string, string> = {
   주: 'bg-blue-50 text-blue-700',
   야: 'bg-indigo-100 text-indigo-800',
   휴: 'bg-slate-100 text-slate-500',
+  통: 'bg-emerald-50 text-emerald-700',
+  특: 'bg-violet-50 text-violet-700',
   연: 'bg-amber-50 text-amber-700',
   '!': 'bg-rose-50 text-rose-700 font-bold',
 };
@@ -239,7 +241,7 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
               </select>
             </label>
             <span className="ml-auto text-[11px] text-slate-400">
-              {rows.length}명 · 주/야/휴/연, ! 누락·결근, 점선 = 경고
+              {rows.length}명 · 주간/야간/통상주간/휴일 = 주/야/통/휴, 특 = 휴일 근무(특근), 연 = 휴가, ! = 누락·결근, 점선 = 경고
             </span>
           </div>
 

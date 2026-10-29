@@ -8,7 +8,7 @@ export const FLAG_LABELS: Record<string, string> = {
   missing_in: '출근 누락',
   missing_out: '퇴근 누락',
   break_short: '휴게 부족',
-  off_day_work: '근무표 없는 날 근무',
+  off_day_work: '휴일 근무(특근)',
   weekly_52: '주 52시간 초과',
   absent: '결근',
   holiday_no_show: '휴일 근무 미출근',
@@ -95,11 +95,12 @@ export interface MatrixCell {
   flags?: string[];
 }
 
-/** 칸 글자: 연(휴가) > !(누락·결근) > 근무표(주/야/휴) > 빈칸. */
+/** 칸 글자: 연(휴가) > !(누락·결근) > 특(휴일 출퇴근 기록) > 근무표(주/야/통/휴) > 빈칸. */
 export function cellLabel(c: MatrixCell | undefined): string {
   if (!c) return '';
   if (c.status === 'leave') return '연';
   if (c.status === 'missing' || c.status === 'absent') return '!';
+  if (c.status === 'off_worked') return '특';
   if (c.shift === 'DAY') return '주';
   if (c.shift === 'NIGHT') return '야';
   if (c.shift === 'DAY_STD') return '통';
@@ -107,10 +108,14 @@ export function cellLabel(c: MatrixCell | undefined): string {
   return c.shift ? c.shift.slice(0, 1) : '';
 }
 
-/** 칸의 경고 코드 = matrix flags. flags 가 없을 때만 누락·결근 상태로 대신한다. */
+/** 휴일 출퇴근(특근)은 주말근무 신청분이라 경고가 아니다 — 칸 글자 '특'으로만 보인다. 누락은 missing_* 로 따로 잡힌다. */
+const INFO_FLAGS = new Set(['off_day_work']);
+
+/** 칸의 경고 코드 = matrix flags(안내용 제외). flags 가 없을 때만 누락·결근 상태로 대신한다. */
 export function cellWarnings(c: MatrixCell | undefined): string[] {
   if (!c) return [];
-  if (c.flags?.length) return c.flags;
+  const flags = c.flags?.filter((f) => !INFO_FLAGS.has(f));
+  if (flags?.length) return flags;
   return c.status === 'missing' || c.status === 'absent' ? [c.status] : [];
 }
 
