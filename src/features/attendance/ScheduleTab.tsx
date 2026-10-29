@@ -9,7 +9,7 @@ import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODES, CODE_LABELS, WEEK_OPTIONS, addDays, ampm, buildCells, cycle, mondayOf, newPattern, resizeWeeks, type PatternRow } from './pattern';
+import { CODES, CODE_LABELS, TEMPLATES, WEEK_OPTIONS, addDays, ampm, buildCells, cycle, fromWeeks, mondayOf, newPattern, resizeWeeks, weekBlock, weeksOf, type PatternRow } from './pattern';
 
 interface PatternDb {
   group_name: string;
@@ -336,13 +336,34 @@ export function ScheduleTab() {
             <div className={`${card} p-4 space-y-3`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold text-slate-900">{current.group_name} 패턴</h2>
+                <div role="group" aria-label="패턴 주 수" className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
+                  {WEEK_OPTIONS.map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      aria-pressed={draft.pattern.length === w * 7}
+                      onClick={() => setDraft({ ...draft, pattern: resizeWeeks(draft.pattern, w) })}
+                      className={`px-3 py-1.5 cursor-pointer ${draft.pattern.length === w * 7 ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {w}주
+                    </button>
+                  ))}
+                </div>
                 <select
-                  value={draft.pattern.length / 7}
-                  onChange={(e) => setDraft({ ...draft, pattern: resizeWeeks(draft.pattern, +e.target.value) })}
-                  aria-label="패턴 주 수"
+                  value={TEMPLATES[(draft.pattern.length / 7) as 4 | 5].find((t) => fromWeeks(t.weeks).every((c, i) => c === draft.pattern[i]))?.name ?? ''}
+                  onChange={(e) => {
+                    const t = TEMPLATES[(draft.pattern.length / 7) as 4 | 5].find((x) => x.name === e.target.value);
+                    if (t) setDraft({ ...draft, pattern: fromWeeks(t.weeks) });
+                  }}
+                  aria-label="템플릿"
                   className={inputCls}
                 >
-                  {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w}주 ({w * 7}일) 반복</option>)}
+                  <option value="" disabled>템플릿 선택 (직접 구성)</option>
+                  {TEMPLATES[(draft.pattern.length / 7) as 4 | 5].map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {[...t.name].map((c, i) => `${i + 1}주 ${c}`).join(' · ')}
+                    </option>
+                  ))}
                 </select>
                 <label className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                   1주차 월요일
@@ -357,6 +378,7 @@ export function ScheduleTab() {
                   <Save className="w-3.5 h-3.5" />
                   저장
                 </button>
+                {dirty && <span className="text-[11px] font-bold text-amber-700">저장 안 됨</span>}
               </div>
               {draft.anchor !== current.anchor_date && (
                 <p className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-700">
@@ -364,7 +386,9 @@ export function ScheduleTab() {
                   저장된 1일차({current.anchor_date})가 월요일이 아니어서 요일이 어긋나 있었습니다. 그 주 월요일({draft.anchor})로 맞췄으니 확인 후 저장하고, 근무표에 다시 적용하세요.
                 </p>
               )}
-              <p className="text-[11px] text-slate-500">칸을 누르면 주간 → 야간 → 휴일 → 통상주간 순으로 바뀝니다. 토·일 휴일은 근무표와 관계없이 토=무급휴일, 일=주휴일로 판정됩니다.</p>
+              <p className="text-[11px] text-slate-500">
+                템플릿이나 주차 옆 선택으로 한 주(월~금 근무, 토·일 휴일)를 한 번에 정하고, 칸을 누르면 하루씩 주간 → 야간 → 휴일 → 통상주간 순으로 바뀝니다. 4주/5주·템플릿·칸 변경은 <b>저장</b>해야 반영되고(5주→4주로 줄이면 5주차는 지워지고, 다시 늘리면 4주차가 복사됩니다), 근무표에는 아래 "근무표에 적용"으로 넣습니다.
+              </p>
               <div className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] gap-1.5 items-center">
                 <span />
                 {WD.map((w) => (
@@ -374,8 +398,25 @@ export function ScheduleTab() {
                 ))}
                 {Array.from({ length: draft.pattern.length / 7 }, (_, wk) => wk).map((wk) => [
                   <span key={`w${wk}`} className="text-[11px] font-semibold text-slate-500 pr-1 whitespace-nowrap">
-                    {wk + 1}주차
-                    <span className="block text-[10px] font-normal">{addDays(draft.anchor, wk * 7).slice(5).replace('-', '/')}~</span>
+                    {wk + 1}주차 <span className="hidden sm:inline font-normal text-[10px]">{addDays(draft.anchor, wk * 7).slice(5).replace('-', '/')}~</span>
+                    <select
+                      value={weeksOf(draft.pattern)[wk] ?? ''}
+                      onChange={(e) => {
+                        const b = weekBlock(e.target.value);
+                        setDraft({ ...draft, pattern: draft.pattern.map((x, j) => (j >= wk * 7 && j < wk * 7 + 7 ? b[j - wk * 7] : x)) });
+                      }}
+                      aria-label={`${wk + 1}주차 근무 일괄`}
+                      className="block mt-0.5 px-1 py-0.5 rounded border border-slate-300 bg-white text-[11px] font-semibold text-slate-700"
+                    >
+                      <option value="" disabled>
+                        섞임
+                      </option>
+                      {(['DAY', 'NIGHT', 'DAY_STD', 'REST'] as const).map((c) => (
+                        <option key={c} value={c}>
+                          {c === 'REST' ? '휴일' : shiftTypes.find((t) => t.code === c)?.name ?? CODE_LABELS[c]}
+                        </option>
+                      ))}
+                    </select>
                   </span>,
                   ...draft.pattern.slice(wk * 7, wk * 7 + 7).map((c, k) => {
                     const i = wk * 7 + k;

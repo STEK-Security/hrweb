@@ -36,6 +36,23 @@ export const resizeWeeks = (pattern: string[], weeks: number) => {
   return out;
 };
 
+/** 한 주 블록: 근무 코드면 월~금 그 근무 + 토·일 휴일(인사팀 기준표), 휴일이면 7일 휴일. */
+export const weekBlock = (code: string) => (code === 'REST' ? Array<string>(7).fill('REST') : [...Array<string>(5).fill(code), 'REST', 'REST']);
+export const fromWeeks = (weeks: string[]) => weeks.flatMap(weekBlock);
+/** 패턴을 주별 코드로. 주 블록 모양(월~금 같은 근무 + 토·일 휴일, 또는 7일 휴일)이 아니면 null. */
+export const weeksOf = (pattern: string[]) =>
+  Array.from({ length: pattern.length / 7 }, (_, i) => {
+    const w = pattern.slice(i * 7, i * 7 + 7);
+    return weekBlock(w[0]).every((c, k) => c === w[k]) ? w[0] : null;
+  });
+
+/** 주간(주)·야간(야) 주 순서 템플릿. 이름 글자 = 1주차부터. */
+const T = (names: string[]) => names.map((name) => ({ name, weeks: [...name].map((c) => (c === '야' ? 'NIGHT' : 'DAY')) }));
+export const TEMPLATES: Record<4 | 5, { name: string; weeks: string[] }[]> = {
+  4: T(['주야주야', '야주야주', '주주야야', '야야주주', '야주주주', '주야주주', '주주야주', '주주주야']),
+  5: T(['주야주야주', '야주야주야', '야주주주주', '주야주주주', '주주야주주', '주주주야주', '주주주주야', '주주주주주']),
+};
+
 /** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 패턴 길이 주기로. */
 export const codeAt = (pattern: string[], anchor: string, d: string) =>
   pattern[(((dayNo(d) - dayNo(anchor)) % pattern.length) + pattern.length) % pattern.length];
