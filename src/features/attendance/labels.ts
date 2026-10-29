@@ -102,6 +102,7 @@ export function cellLabel(c: MatrixCell | undefined): string {
   if (c.status === 'missing' || c.status === 'absent') return '!';
   if (c.shift === 'DAY') return '주';
   if (c.shift === 'NIGHT') return '야';
+  if (c.shift === 'DAY_STD') return '통';
   if (c.shift === 'REST' || c.shift === 'WEEKLY_HOLIDAY' || c.status === 'off') return '휴';
   return c.shift ? c.shift.slice(0, 1) : '';
 }

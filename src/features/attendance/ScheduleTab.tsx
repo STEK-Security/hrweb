@@ -9,7 +9,7 @@ import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { supabase } from '../../lib/supabase';
 import { errorText, shiftYm } from './labels';
-import { CODE_LABELS, addDays, buildCells, cycle, type PatternRow } from './pattern';
+import { CODES, CODE_LABELS, addDays, ampm, buildCells, cycle, mondayOf, type PatternRow } from './pattern';
 
 interface PatternDb {
   group_name: string;
@@ -45,14 +45,23 @@ interface Preview {
 const TABLE = 'attendance_shift_patterns';
 const CHUNK = 500; // Worker PUT /schedules 상한
 const MAX_DAYS = 92;
-const WD = ['일', '월', '화', '수', '목', '금', '토'];
+const WD = ['월', '화', '수', '목', '금', '토', '일']; // 패턴 1일차 = 월요일
 const card = 'bg-white rounded-xl border border-slate-200 shadow-xs';
 const inputCls = 'px-2 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 focus:ring-1 focus:ring-blue-500';
 const TONE: Record<string, string> = {
   DAY: 'bg-blue-50 text-blue-700 border-blue-200',
   NIGHT: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   REST: 'bg-slate-100 text-slate-500 border-slate-200',
+  DAY_STD: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
+interface ShiftType {
+  code: string;
+  name: string;
+  start: string | null;
+  end: string | null;
+  fri_start: string | null;
+  fri_end: string | null;
+}
 const SKIP_LABELS: Record<keyof Preview['skipped'], string> = {
   past: '지난 날',
   closed: '마감 달',
@@ -66,6 +75,7 @@ export function ScheduleTab() {
   const today = todayKst();
   const [patterns, setPatterns] = useState<PatternDb[]>([]);
   const [emps, setEmps] = useState<Emp[] | null>(null);
+  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ pattern: string[]; anchor: string } | null>(null);
   const [newName, setNewName] = useState('');
@@ -91,12 +101,14 @@ export function ScheduleTab() {
     att<Emp[]>('GET', '/api/admin/employees')
       .then(setEmps)
       .catch((e) => setError(errorText(e)));
+    att<ShiftType[]>('GET', '/api/admin/shift-types').then(setShiftTypes).catch((e) => setError(`근무형태를 불러오지 못했습니다: ${errorText(e)}`));
   }, [loadPatterns]);
 
   const current = patterns.find((p) => p.group_name === selected) ?? null;
   // 선택이 바뀌거나 저장본이 다시 로드되면 편집본을 저장본으로 맞춘다.
   useEffect(() => {
-    setDraft(current && { pattern: [...current.pattern], anchor: current.anchor_date });
+    // 1일차는 월요일 — 예전에 다른 요일로 저장된 기준일은 그 주 월요일로 맞춰 보여 준다(저장해야 반영).
+    setDraft(current && { pattern: [...current.pattern], anchor: mondayOf(current.anchor_date) });
     setPreview(null);
   }, [current]);
   useEffect(() => {
@@ -144,21 +156,25 @@ export function ScheduleTab() {
     run(async () => {
       const name = window.prompt(`'${old}' 근무조의 새 이름`, old)?.trim();
       if (!name || name === old) return;
+      if (!emps) throw new Error('직원 목록을 불러오지 못해 이름을 바꿀 수 없습니다. 새로고침 후 다시 하세요.');
       if (name.length > 20) throw new Error('근무조 이름을 1~20자로 입력하세요.');
       if (patterns.some((p) => p.group_name === name)) throw new Error('이미 있는 근무조입니다.');
       const { error: e } = await supabase!.from(TABLE).update({ group_name: name }).eq('group_name', old);
       if (e) throw new Error(e.message);
       // 직원의 근무조(Worker employees.shift_group)도 새 이름으로 옮긴다. 퇴사자 포함.
-      const members = (emps ?? []).filter((x) => x.shift_group === old);
+      const members = emps.filter((x) => x.shift_group === old);
+      const moved = (n: number) => setEmps((es) => es && es.map((x) => (members.slice(0, n).some((m) => m.sabun === x.sabun) ? { ...x, shift_group: name } : x)));
       for (const [i, x] of members.entries()) {
         try {
           await att('PATCH', `/api/admin/employees/${x.sabun}`, { body: { shift_group: name } });
         } catch (err) {
+          moved(i);
+          await loadPatterns();
           throw new Error(`이름은 바꿨지만 직원 ${i}/${members.length}명만 옮겼습니다 — 직원 설정 탭에서 나머지를 '${name}'로 지정하세요. (${errorText(err)})`);
         }
       }
       await logEvent('attendance.pattern', { meta: { group: name, op: 'rename', from: old, members: members.length } });
-      setEmps((es) => es && es.map((x) => (x.shift_group === old ? { ...x, shift_group: name } : x)));
+      moved(members.length);
       await loadPatterns();
       setSelected(name);
       setMsg(`'${old}' → '${name}' (직원 ${members.length}명 이동)`);
@@ -166,7 +182,8 @@ export function ScheduleTab() {
 
   const deleteGroup = (name: string) =>
     run(async () => {
-      const n = (emps ?? []).filter((x) => x.shift_group === name).length;
+      if (!emps) throw new Error('직원 목록을 불러오지 못해 삭제할 수 없습니다. 새로고침 후 다시 하세요.');
+      const n = emps.filter((x) => x.shift_group === name).length;
       if (n) throw new Error(`'${name}'에 지정된 직원 ${n}명(퇴사자 포함)이 있습니다. 직원 설정 탭에서 다른 근무조로 옮긴 뒤 삭제하세요.`);
       if (!window.confirm(`'${name}' 근무조를 삭제하시겠습니까? 이미 근무표에 들어간 날은 그대로 남습니다.`)) return;
       const { error: e } = await supabase!.from(TABLE).delete().eq('group_name', name);
@@ -199,6 +216,8 @@ export function ScheduleTab() {
       const targets = (all ? patterns : [{ group_name: current.group_name, anchor_date: draft.anchor, pattern: draft.pattern }])
         .map((p) => ({ ...p, sabuns: members(p.group_name) }))
         .filter((p) => p.sabuns.length);
+      const notMonday = targets.filter((t) => mondayOf(t.anchor_date) !== t.anchor_date).map((t) => t.group_name);
+      if (notMonday.length) throw new Error(`1일차가 월요일이 아닌 근무조가 있습니다: ${notMonday.join(', ')} — 근무조를 하나씩 열어 저장한 뒤 적용하세요.`);
       if (!targets.length) throw new Error('지정된 직원이 있는 근무조가 없습니다. 직원 설정 탭에서 근무조를 지정하세요.');
       const yms: string[] = [];
       for (let ym = from.slice(0, 7); ym <= to.slice(0, 7); ym = shiftYm(ym, 1)) yms.push(ym);
@@ -312,8 +331,8 @@ export function ScheduleTab() {
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm font-bold text-slate-900">{current.group_name} 28일 패턴</h2>
                 <label className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-slate-600">
-                  1일차 기준일
-                  <input type="date" value={draft.anchor} onChange={(e) => e.target.value && setDraft({ ...draft, anchor: e.target.value })} className={inputCls} />
+                  1주차 월요일
+                  <input type="date" value={draft.anchor} onChange={(e) => e.target.value && setDraft({ ...draft, anchor: mondayOf(e.target.value) })} className={inputCls} />
                 </label>
                 <button
                   type="button"
@@ -325,26 +344,54 @@ export function ScheduleTab() {
                   저장
                 </button>
               </div>
-              <p className="text-[11px] text-slate-500">칸을 누르면 주간 → 야간 → 휴일 순으로 바뀝니다.</p>
-              <div className="grid grid-cols-7 gap-1.5">
-                {draft.pattern.map((c, i) => {
-                  const wd = WD[new Date(`${addDays(draft.anchor, i)}T00:00:00Z`).getUTCDay()];
+              {draft.anchor !== current.anchor_date && (
+                <p className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-700">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  저장된 1일차({current.anchor_date})가 월요일이 아니어서 요일이 어긋나 있었습니다. 그 주 월요일({draft.anchor})로 맞췄으니 확인 후 저장하고, 근무표에 다시 적용하세요.
+                </p>
+              )}
+              <p className="text-[11px] text-slate-500">칸을 누르면 주간 → 야간 → 휴일 → 통상주간 순으로 바뀝니다. 토·일 휴일은 근무표와 관계없이 토=무급휴일, 일=주휴일로 판정됩니다.</p>
+              <div className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] gap-1.5 items-center">
+                <span />
+                {WD.map((w) => (
+                  <span key={w} className={`text-center text-[11px] font-bold ${w === '토' ? 'text-blue-600' : w === '일' ? 'text-rose-600' : 'text-slate-500'}`}>
+                    {w}
+                  </span>
+                ))}
+                {[0, 1, 2, 3].map((wk) => [
+                  <span key={`w${wk}`} className="text-[11px] font-semibold text-slate-500 pr-1 whitespace-nowrap">
+                    {wk + 1}주차
+                    <span className="block text-[10px] font-normal">{addDays(draft.anchor, wk * 7).slice(5).replace('-', '/')}~</span>
+                  </span>,
+                  ...draft.pattern.slice(wk * 7, wk * 7 + 7).map((c, k) => {
+                    const i = wk * 7 + k;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setDraft({ ...draft, pattern: draft.pattern.map((x, j) => (j === i ? cycle(x) : x)) })}
+                        aria-label={`${wk + 1}주차 ${WD[k]}요일 ${CODE_LABELS[c] ?? c}`}
+                        className={`py-2 rounded-md border text-sm font-bold cursor-pointer ${TONE[c] ?? 'bg-white text-slate-700 border-slate-200'}`}
+                      >
+                        {CODE_LABELS[c] ?? c}
+                      </button>
+                    );
+                  }),
+                ])}
+              </div>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                {CODES.map((code) => {
+                  const t = shiftTypes.find((x) => x.code === code);
+                  if (!t) return code === 'DAY_STD' ? <li key={code} className="text-amber-700">통 = 통상주간: 규칙 탭 근무형태에 DAY_STD 가 없어 저장할 수 없습니다.</li> : null;
+                  const fri = t.fri_start || t.fri_end ? ` (금 ${ampm(t.fri_start ?? t.start)}~${ampm(t.fri_end ?? t.end)})` : '';
                   return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setDraft({ ...draft, pattern: draft.pattern.map((x, j) => (j === i ? cycle(x) : x)) })}
-                      aria-label={`${i + 1}일차(${wd}) ${CODE_LABELS[c] ?? c}`}
-                      className={`flex flex-col items-center py-1.5 rounded-md border text-sm font-bold cursor-pointer ${TONE[c] ?? 'bg-white text-slate-700 border-slate-200'}`}
-                    >
-                      <span className="text-[10px] font-semibold opacity-70">
-                        {i + 1} · {wd}
-                      </span>
-                      {CODE_LABELS[c] ?? c}
-                    </button>
+                    <li key={code}>
+                      <b className="text-slate-700">{CODE_LABELS[code]}</b> = {t.name}
+                      {t.start && t.end ? ` ${ampm(t.start)}~${t.end < t.start ? '익일 ' : ''}${ampm(t.end)}${fri}` : ''}
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             </div>
 
             {/* 적용 */}

@@ -3,7 +3,7 @@
  * 실행: bun run test:unit
  */
 import assert from 'node:assert/strict';
-import { buildCells, codeAt, cycle } from '../../src/features/attendance/pattern';
+import { ampm, buildCells, codeAt, cycle, mondayOf } from '../../src/features/attendance/pattern';
 
 const A = [
   ...Array(5).fill('DAY'), 'REST', 'REST', ...Array(5).fill('DAY'), 'REST', 'REST',
@@ -22,7 +22,7 @@ assert.equal(codeAt(A, anchor, '2025-11-03'), A[((-364 % 28) + 28) % 28], '1년 
 
 assert.equal(cycle('DAY'), 'NIGHT');
 assert.equal(cycle('NIGHT'), 'REST');
-assert.equal(cycle('REST'), 'DAY');
+assert.equal(cycle('REST'), 'DAY_STD');
 
 const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11-02', closedYms: new Set<string>() };
 
@@ -75,7 +75,23 @@ const base = { holidays: new Set<string>(), holidayAsRest: true, today: '2026-11
   assert.equal(r.skipped.same, 1);
 }
 
+// 1일차 = 그 주 월요일(목요일로 잘못 저장된 기준일 → 같은 주 월요일)
+assert.equal(mondayOf('2026-10-29'), '2026-10-26');
+assert.equal(mondayOf('2026-11-02'), '2026-11-02');
+assert.equal(mondayOf('2026-11-08'), '2026-11-02'); // 일요일은 앞 주 월요일
+// 월요일 기준이면 6·7일차가 토·일
+assert.equal(codeAt(A, mondayOf('2026-10-29'), '2026-10-31'), 'REST');
+assert.equal(codeAt(A, mondayOf('2026-10-29'), '2026-10-30'), 'DAY');
+// 오전/오후 표기
+assert.equal(ampm('20:00'), '오후 8:00');
+assert.equal(ampm('08:00'), '오전 8:00');
+assert.equal(ampm('00:00'), '오전 12:00');
+assert.equal(ampm('12:30'), '오후 12:30');
+assert.equal(ampm(null), '');
+// 통상주간도 순환에 들어간다
+assert.equal(cycle('DAY_STD'), 'DAY');
+
 // 패턴 길이 검사
 assert.throws(() => buildCells(['DAY'], anchor, '2026-11-02', '2026-11-02', ['1001'], [], { ...base, group: 'A조' }));
 
-console.log('PASS attendancePattern (27 checks)');
+console.log('PASS attendancePattern (38 checks)');

@@ -7,6 +7,7 @@ import { Plus, Save, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import { errorText } from './labels';
+import { ampm } from './pattern';
 
 interface ShiftType { code: string; name: string; kind: 'work' | 'weekly_holiday' | 'rest'; start: string | null; end: string | null; fri_start: string | null; fri_end: string | null; breaks: string; color: string | null }
 interface Holiday { date: string; name: string }
@@ -82,7 +83,10 @@ function ShiftTypes() {
   };
 
   const time = (i: number, k: 'start' | 'end' | 'fri_start' | 'fri_end', v: string | null, label: string) => (
-    <input type="time" aria-label={label} value={v ?? ''} onChange={(e) => set(i, { [k]: e.target.value || null })} className={`${input} w-24`} />
+    <div>
+      <input type="time" aria-label={label} value={v ?? ''} onChange={(e) => set(i, { [k]: e.target.value || null })} className={`${input} w-24`} />
+      <span className="block text-[10px] text-slate-500 mt-0.5">{ampm(v) || '\u00a0'}</span>
+    </div>
   );
 
   return (

@@ -3,14 +3,24 @@
  * 덮어쓰지 않는 칸: 오늘 이전, 마감(open 아닌) 달, 직접 수정한 칸(note 가 `pattern:` 로 시작하지 않는 기존 행).
  */
 
-export const CODES = ['DAY', 'NIGHT', 'REST'] as const;
-export const CODE_LABELS: Record<string, string> = { DAY: '주', NIGHT: '야', REST: '휴' };
+/** DAY_STD = 통상주간(생산·품질 주간 근무자 08:00~17:00). 근무유형(shift_types)에 같은 코드가 있어야 저장된다. */
+export const CODES = ['DAY', 'NIGHT', 'REST', 'DAY_STD'] as const;
+export const CODE_LABELS: Record<string, string> = { DAY: '주', NIGHT: '야', REST: '휴', DAY_STD: '통' };
 
-/** 칸 클릭 순환: 주간 → 야간 → 휴일 → 주간. */
+/** 칸 클릭 순환: 주간 → 야간 → 휴일 → 통상주간 → 주간. */
 export const cycle = (c: string) => CODES[(CODES.indexOf(c as (typeof CODES)[number]) + 1) % CODES.length];
 
 const dayNo = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86_400_000;
 export const addDays = (d: string, n: number) => new Date((dayNo(d) + n) * 86_400_000).toISOString().slice(0, 10);
+/** 그 주 월요일. 패턴 1일차는 월요일이다(인사팀 기준표: 5일차 금, 6·7일차 토·일). */
+export const mondayOf = (d: string) => addDays(d, -((new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7));
+
+/** '20:00' → '오후 8:00', '00:00' → '오전 12:00' */
+export const ampm = (hm: string | null) => {
+  if (!hm) return '';
+  const h = +hm.slice(0, 2);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${hm.slice(3, 5)}`;
+};
 
 /** 날짜 d 의 패턴 코드. 기준일 이전(음수)도 28일 주기로. */
 export const codeAt = (pattern: string[], anchor: string, d: string) =>
