@@ -37,6 +37,9 @@ interface Preview {
   rows: PatternRow[];
   skipped: { past: number; closed: number; manual: number; same: number };
   people: number;
+  /** 적용 버튼 이름 — 근무조 이름 또는 '전체 근무조' */
+  label: string;
+  groups: string[];
 }
 
 const TABLE = 'attendance_shift_patterns';
@@ -184,17 +187,19 @@ export function ScheduleTab() {
       setMsg('패턴을 저장했습니다.');
     });
 
-  const sabuns = useMemo(
-    () => (emps ?? []).filter((e) => e.shift_group === selected && (!e.retire_date || e.retire_date >= from)).map((e) => e.sabun),
-    [emps, selected, from],
-  );
+  const members = (group: string) =>
+    (emps ?? []).filter((e) => e.shift_group === group && (!e.retire_date || e.retire_date >= from)).map((e) => e.sabun);
 
-  const makePreview = () =>
+  /** all: 저장된 모든 근무조 패턴을 한 번에, 아니면 선택한 근무조(편집 중 패턴). */
+  const makePreview = (all: boolean) =>
     run(async () => {
       if (!current || !draft) return;
       if (!from || !to || from > to) throw new Error('적용 기간을 확인하세요.');
       if (addDays(from, MAX_DAYS) <= to) throw new Error(`적용 기간은 최대 ${MAX_DAYS}일입니다.`);
-      if (!sabuns.length) throw new Error('이 근무조에 지정된 직원이 없습니다. 직원 설정 탭에서 근무조를 지정하세요.');
+      const targets = (all ? patterns : [{ group_name: current.group_name, anchor_date: draft.anchor, pattern: draft.pattern }])
+        .map((p) => ({ ...p, sabuns: members(p.group_name) }))
+        .filter((p) => p.sabuns.length);
+      if (!targets.length) throw new Error('지정된 직원이 있는 근무조가 없습니다. 직원 설정 탭에서 근무조를 지정하세요.');
       const yms: string[] = [];
       for (let ym = from.slice(0, 7); ym <= to.slice(0, 7); ym = shiftYm(ym, 1)) yms.push(ym);
       const years = [...new Set(yms.map((y) => y.slice(0, 4)))];
@@ -204,22 +209,23 @@ export function ScheduleTab() {
         Promise.all(yms.map((ym) => att<SchedRow[]>('GET', '/api/admin/schedules', { query: { ym } }))),
       ]);
       const holidays = new Set(hols.flat().map((h) => h.date));
-      const mine = new Set(sabuns);
-      const existing = scheds.flat().filter((r) => mine.has(r.sabun));
-      const r = buildCells(draft.pattern, draft.anchor, from, to, sabuns, existing, {
-        group: current.group_name,
-        holidays,
-        holidayAsRest,
-        today,
-        includePast,
-        closedYms: new Set(months.filter((m) => m.status !== 'open').map((m) => m.ym)),
-      });
-      setPreview({ ...r, people: sabuns.length });
+      const closedYms = new Set(months.filter((m) => m.status !== 'open').map((m) => m.ym));
+      const out: Preview = { rows: [], skipped: { past: 0, closed: 0, manual: 0, same: 0 }, people: 0, label: all ? '전체 근무조' : current.group_name, groups: [] };
+      for (const t of targets) {
+        const mine = new Set(t.sabuns);
+        const existing = scheds.flat().filter((r) => mine.has(r.sabun));
+        const r = buildCells(t.pattern, t.anchor_date, from, to, t.sabuns, existing, { group: t.group_name, holidays, holidayAsRest, today, includePast, closedYms });
+        out.rows.push(...r.rows);
+        for (const k of Object.keys(out.skipped) as (keyof Preview['skipped'])[]) out.skipped[k] += r.skipped[k];
+        out.people += t.sabuns.length;
+        out.groups.push(t.group_name);
+      }
+      setPreview(out);
     });
 
   const apply = () =>
     run(async () => {
-      if (!current || !draft || !preview) return;
+      if (!preview) return;
       const rows = preview.rows;
       setProgress({ done: 0, total: rows.length });
       for (let i = 0; i < rows.length; i += CHUNK) {
@@ -231,7 +237,7 @@ export function ScheduleTab() {
         }
         setProgress({ done: Math.min(i + CHUNK, rows.length), total: rows.length });
       }
-      await logEvent('attendance.schedule', { meta: { group: current.group_name, from, to, rows: rows.length, skipped: preview.skipped } });
+      await logEvent('attendance.schedule', { meta: { group: preview.groups.join(','), from, to, rows: rows.length, skipped: preview.skipped } });
       setPreview(null);
       setMsg(`${rows.length}칸을 저장했습니다.`);
     }).finally(() => setProgress(null));
@@ -358,12 +364,20 @@ export function ScheduleTab() {
                 </label>
                 <button
                   type="button"
-                  onClick={makePreview}
+                  onClick={() => makePreview(false)}
                   disabled={busy || dirty}
                   className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 cursor-pointer"
                 >
                   {busy && !progress && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   미리보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => makePreview(true)}
+                  disabled={busy || dirty}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 disabled:opacity-50 cursor-pointer"
+                >
+                  전체 근무조 미리보기
                 </button>
               </div>
               {dirty && <p className="text-[11px] font-semibold text-amber-700">패턴을 먼저 저장하세요.</p>}
@@ -372,6 +386,7 @@ export function ScheduleTab() {
               {preview && (
                 <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-700">
                   <p className="font-semibold">
+                    {preview.groups.length > 1 && <span className="text-slate-500">{preview.groups.join(' · ')} — </span>}
                     {preview.people}명 · 저장할 칸 <span className="text-blue-700">{preview.rows.length}</span>
                   </p>
                   <ul className="flex gap-3 flex-wrap text-slate-500">
@@ -388,7 +403,7 @@ export function ScheduleTab() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50 cursor-pointer"
                   >
                     {progress && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    {current.group_name} {preview.people}명에 적용
+                    {preview.label} {preview.people}명에 적용
                   </button>
                 </div>
               )}
