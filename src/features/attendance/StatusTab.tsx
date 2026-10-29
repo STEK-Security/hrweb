@@ -253,7 +253,7 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
             <p className="py-16 text-center text-sm text-slate-500">표시할 직원이 없습니다.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="text-[11px] border-separate border-spacing-0">
+              <table className="w-full text-[11px] border-separate border-spacing-0">
                 <thead>
                   <tr>
                     <th scope="col" className="sticky left-0 z-10 bg-white px-3 py-2 text-left font-semibold text-slate-500 border-b border-slate-100 min-w-28">
@@ -290,7 +290,7 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
                               onClick={() => setTarget({ sabun: r.sabun, name: r.name, date: d })}
                               aria-label={`${r.name} ${d} ${c ? STATUS_LABELS[c.status] ?? c.status : '기록 없음'}${warn.length ? ` 경고 ${warn.map((f) => FLAG_LABELS[f] ?? f).join(', ')}` : ''}`}
                               title={warn.map((f) => FLAG_LABELS[f] ?? f).join(', ') || undefined}
-                              className={`w-7 h-7 rounded-md text-[11px] leading-none cursor-pointer hover:ring-2 hover:ring-blue-300 ${LABEL_TONE[label] ?? 'text-slate-400'} ${
+                              className={`w-full min-w-7 h-7 rounded-md text-[11px] leading-none cursor-pointer hover:ring-2 hover:ring-blue-300 ${LABEL_TONE[label] ?? 'text-slate-400'} ${
                                 warn.length ? 'border border-dashed border-rose-400' : ''
                               }`}
                             >
