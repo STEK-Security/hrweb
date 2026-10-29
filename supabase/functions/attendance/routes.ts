@@ -12,7 +12,7 @@ const ROUTES: Record<string, string[]> = {
     `months/${YM}/precheck`, 'jobs', `jobs/${ID}`, `months/${YM}/snapshot`,
   ],
   POST: [
-    `corrections/${ID}`, `days/${ID}/${DATE}/edit`, 'rules', 'recompute', `accounts/${ID}/reset`,
+    `corrections/${ID}`, `corrections/${ID}/revoke`, `days/${ID}/${DATE}/edit`, 'rules', 'recompute', `accounts/${ID}/reset`,
     `months/${YM}/close`, `months/${YM}/reopen`, 'jobs/step',
   ],
   PUT: ['shift-types', 'holidays', 'schedules'],

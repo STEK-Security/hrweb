@@ -25,6 +25,7 @@ const ok: Array<[string, string]> = [
   ['GET', '/api/admin/jobs/12'],
   ['GET', '/api/admin/months/2026-10/snapshot'],
   ['POST', '/api/admin/corrections/5'],
+  ['POST', '/api/admin/corrections/5/revoke'],
   ['POST', '/api/admin/days/A1234/2026-10-01/edit'],
   ['POST', '/api/admin/rules'],
   ['POST', '/api/admin/recompute'],

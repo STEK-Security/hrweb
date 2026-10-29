@@ -70,6 +70,7 @@ export const ERROR_LABELS: Record<string, string> = {
   ALREADY_CLOSED: '이미 마감된 달입니다.',
   ALREADY_CLOSING: '이미 마감 중인 달입니다.',
   NOT_CLOSED: '마감되지 않은 달입니다.',
+  NOT_APPROVED: '승인된 건만 취소할 수 있습니다(이미 취소·변경됨). 새로고침하세요.',
   ACTOR_REQUIRED: '처리자 정보가 필요합니다. 다시 로그인하세요.',
   UNAUTHORIZED: '인증이 필요합니다. 다시 로그인하세요.',
   FORBIDDEN: '권한이 없습니다.',
