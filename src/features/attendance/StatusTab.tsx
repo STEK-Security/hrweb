@@ -389,6 +389,32 @@ function DayDetailModal({
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [shiftTypes, setShiftTypes] = useState<{ code: string; name: string; start: string | null; end: string | null }[]>([]);
+  const [shift, setShift] = useState('');
+  const [shiftMsg, setShiftMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    att<typeof shiftTypes>('GET', '/api/admin/shift-types').then(setShiftTypes).catch((e) => setShiftMsg(`근무형태를 불러오지 못했습니다: ${errorText(e)}`));
+  }, []);
+  useEffect(() => setShift(day?.shiftCode ?? ''), [day]);
+
+  /** 그날 하루만 근무 변경(예: 주간 근무표인데 야간 근무). 패턴 재적용에 덮이지 않게 note 는 'hr'. Worker 가 바로 재계산한다. */
+  const saveShift = async () => {
+    if (!shift || shift === day?.shiftCode) return;
+    setSaving(true);
+    setShiftMsg(null);
+    try {
+      await att('PUT', '/api/admin/schedules', { body: { rows: [{ sabun: target.sabun, work_date: target.date, shift_code: shift, note: 'hr' }] } });
+      await logEvent('attendance.schedule', { meta: { sabun: target.sabun, date: target.date, from: day?.shiftCode ?? null, to: shift, op: 'day' } });
+      setReload((k) => k + 1);
+      onSaved();
+      setShiftMsg('근무를 바꾸고 다시 계산했습니다.');
+    } catch (e) {
+      setShiftMsg(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -469,7 +495,7 @@ function DayDetailModal({
                   ['출근', day.inAt?.slice(11) ?? '-'],
                   ['퇴근', day.outAt ? (day.outAt.slice(0, 10) === day.date ? day.outAt.slice(11) : `익일 ${day.outAt.slice(11)}`) : '-'],
                   ['상태', STATUS_LABELS[day.status] ?? day.status],
-                  ['근무', `${day.shiftCode ?? '-'} · ${day.dayClass}`],
+                  ['근무', `${shiftTypes.find((t) => t.code === day.shiftCode)?.name ?? day.shiftCode ?? '-'} · ${day.dayClass}`],
                   ['출처', day.source ? SOURCE_LABELS[day.source] ?? day.source : '-'],
                 ].map(([k, v]) => (
                   <div key={k} className="p-2 rounded-lg bg-slate-50">
@@ -506,6 +532,34 @@ function DayDetailModal({
           )}
 
           {!editable && <p className="text-[11px] text-slate-500">마감(또는 마감 중)인 달은 수정할 수 없습니다.</p>}
+
+          {editable && !loadErr && day !== undefined && (
+            <div className="p-3 rounded-lg border border-slate-200 space-y-2">
+              <label className="block text-[11px] font-semibold text-slate-600">
+                이날 근무 변경 <span className="font-normal text-slate-500">(실제로 다른 조로 근무한 날 — 이날 하루만 바뀌고 패턴 재적용에도 유지)</span>
+                <div className="mt-1 flex gap-2">
+                  <select value={shift} onChange={(e) => setShift(e.target.value)} aria-label="이날 근무" className={inputCls}>
+                    {!shift && <option value="">근무표 없음</option>}
+                    {shiftTypes.map((t) => (
+                      <option key={t.code} value={t.code}>
+                        {t.name}
+                        {t.start && t.end ? ` ${t.start}~${t.end}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={saveShift}
+                    disabled={saving || !shift || shift === (day?.shiftCode ?? '')}
+                    className="shrink-0 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '변경'}
+                  </button>
+                </div>
+              </label>
+              {shiftMsg && <p role="status" className="text-[11px] font-semibold text-slate-600">{shiftMsg}</p>}
+            </div>
+          )}
 
           {editable && !loadErr && day !== undefined && !editing && (
             <button
