@@ -9,10 +9,10 @@ const ROUTES: Record<string, string[]> = {
   GET: [
     'days', 'month', 'matrix', 'corrections', 'shift-types', 'holidays', 'rules', 'schedules',
     'employees', 'confirmations', 'export', 'unmatched', 'audit', 'months',
-    `months/${YM}/precheck`, 'jobs', `jobs/${ID}`, `months/${YM}/snapshot`,
+    `months/${YM}/precheck`, 'jobs', `jobs/${ID}`, `months/${YM}/snapshot`, `days/${ID}/${DATE}/punches`,
   ],
   POST: [
-    `corrections/${ID}`, `corrections/${ID}/revoke`, `days/${ID}/${DATE}/edit`, 'rules', 'recompute', `accounts/${ID}/reset`,
+    `corrections/${ID}`, `corrections/${ID}/revoke`, `days/${ID}/${DATE}/edit`, `days/${ID}/${DATE}/punches`, 'rules', 'recompute', `accounts/${ID}/reset`,
     `months/${YM}/close`, `months/${YM}/reopen`, 'jobs/step',
   ],
   PUT: ['shift-types', 'holidays', 'schedules'],

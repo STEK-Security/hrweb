@@ -3,7 +3,7 @@
  * 데이터: GET /months, /employees, /confirmations, /matrix, /month (모두 Worker admin.ts 모양 그대로).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw, Loader2, X, AlertTriangle, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Loader2, X, AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 import { att } from '../../lib/attendance';
 import { logEvent } from '../../lib/audit';
 import {
@@ -367,6 +367,114 @@ export function StatusTab({ ym, onChangeYm, pending }: Props) {
 const toLocal = (s: string | null) => (s ? s.replace(' ', 'T') : '');
 const fromLocal = (s: string) => (s ? s.replace('T', ' ') : null);
 
+type Punch = { id: number; at: string; flag1: string | null; voidedAt: string | null; voidedBy: string | null; voidReason: string | null };
+const PUNCH_KEY: Record<string, string> = { '1': '출근', '4': '퇴근' };
+
+/** 그날 원본 지문(다음 날 12시 전까지). 잘못 찍힌 것을 골라 사유와 함께 삭제 — 행은 남고(되돌리기 가능) 그날이 다시 계산된다. */
+function PunchList({ target, editable, onChanged }: { target: Target; editable: boolean; onChanged: () => void }) {
+  const [list, setList] = useState<Punch[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reload, setReload] = useState(0);
+  const path = `/api/admin/days/${encodeURIComponent(target.sabun)}/${target.date}/punches`;
+
+  useEffect(() => {
+    let alive = true;
+    att<Punch[]>('GET', path).then((r) => alive && setList(r)).catch((e) => alive && setErr(errorText(e)));
+    return () => {
+      alive = false;
+    };
+  }, [path, reload]);
+
+  const send = async (ids: number[], restore: boolean) => {
+    setErr(null);
+    if (!restore && reason.trim().length < 2) return setErr('삭제 사유를 2자 이상 입력하세요.');
+    setBusy(true);
+    try {
+      await att('POST', path, { body: { ids, reason: reason.trim(), restore } });
+      await logEvent('attendance.correction', { meta: { sabun: target.sabun, date: target.date, ids, decision: restore ? 'punch_restore' : 'punch_void' } });
+      setPicked([]);
+      setReason('');
+      setReload((k) => k + 1);
+      onChanged();
+    } catch (e) {
+      setErr(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!list) return err ? <p role="alert" className="text-xs text-rose-700 font-semibold">{err}</p> : null;
+  return (
+    <div className="p-3 rounded-lg border border-slate-200 space-y-2">
+      <p className="text-[11px] font-semibold text-slate-600">
+        지문 기록 <span className="font-normal text-slate-500">(잘못 찍힌 기록은 골라서 삭제 — 다시 수집돼도 살아나지 않음)</span>
+      </p>
+      {list.length === 0 ? (
+        <p className="text-xs text-slate-500">이 날 지문 기록이 없습니다.</p>
+      ) : (
+        <ul className="space-y-1">
+          {list.map((p) => {
+            const t = (p.at.slice(0, 10) === target.date ? '' : '익일 ') + p.at.slice(11);
+            const key = PUNCH_KEY[p.flag1 ?? ''] ?? '출입';
+            return (
+              <li key={p.id} className="flex items-center gap-2 text-xs">
+                {p.voidedAt ? (
+                  <>
+                    <span className="line-through text-slate-400 tabular-nums">{t} {key}</span>
+                    <span className="text-[10px] text-rose-600 truncate" title={`${p.voidedBy ?? ''} ${p.voidedAt}`}>삭제됨 · {p.voidReason}</span>
+                    {editable && (
+                      <button type="button" disabled={busy} onClick={() => void send([p.id], true)} className="ml-auto shrink-0 text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-50 cursor-pointer">
+                        되돌리기
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    {editable && (
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(p.id)}
+                        onChange={(e) => setPicked((v) => (e.target.checked ? [...v, p.id] : v.filter((x) => x !== p.id)))}
+                      />
+                    )}
+                    <span className="font-semibold text-slate-800 tabular-nums">{t}</span>
+                    <span className="text-slate-500">{key}</span>
+                  </label>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {editable && picked.length > 0 && (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="삭제 사유 (예: 토요일 미근무 오타각)"
+            aria-label="삭제 사유"
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void send(picked, false)}
+            className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            {picked.length}건 삭제
+          </button>
+        </div>
+      )}
+      {err && <p role="alert" className="text-[11px] font-semibold text-rose-700">{err}</p>}
+    </div>
+  );
+}
+
 function DayDetailModal({
   ym,
   target,
@@ -532,6 +640,17 @@ function DayDetailModal({
           )}
 
           {!editable && <p className="text-[11px] text-slate-500">마감(또는 마감 중)인 달은 수정할 수 없습니다.</p>}
+
+          {!loadErr && day !== undefined && (
+            <PunchList
+              target={target}
+              editable={editable}
+              onChanged={() => {
+                setReload((k) => k + 1);
+                onSaved();
+              }}
+            />
+          )}
 
           {editable && !loadErr && day !== undefined && (
             <div className="p-3 rounded-lg border border-slate-200 space-y-2">

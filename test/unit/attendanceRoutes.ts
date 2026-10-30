@@ -27,6 +27,8 @@ const ok: Array<[string, string]> = [
   ['POST', '/api/admin/corrections/5'],
   ['POST', '/api/admin/corrections/5/revoke'],
   ['POST', '/api/admin/days/A1234/2026-10-01/edit'],
+  ['GET', '/api/admin/days/A1234/2026-10-01/punches'],
+  ['POST', '/api/admin/days/A1234/2026-10-01/punches'],
   ['POST', '/api/admin/rules'],
   ['POST', '/api/admin/recompute'],
   ['POST', '/api/admin/accounts/A1234/reset'],
@@ -68,6 +70,7 @@ const bad: Array<[string, string]> = [
   // 세그먼트 형식
   ['GET', '/api/admin/months/2026-10/precheck/x'],
   ['POST', '/api/admin/days/A1234/2026-10-01/edit/x'],
+  ['DELETE', '/api/admin/days/A1234/2026-10-01/punches'],
   ['PATCH', '/api/admin/employees/'],
   ['GET', '/api/admin/jobs/a%2F..'],
   ['GET', '/api/admin/days\\..\\x'],
